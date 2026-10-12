@@ -1,0 +1,17 @@
+[package]
+name = "qymcad-drive"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Headless session over one document"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-kernel.workspace = true
+qymcad-io.workspace = true
+
+[lints]
+workspace = true

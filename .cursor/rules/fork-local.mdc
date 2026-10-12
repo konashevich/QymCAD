@@ -1,0 +1,15 @@
+---
+description: Fork-only context for konashevich/QymCAD (not for upstream PRs)
+alwaysApply: true
+---
+
+This workspace is the konashevich fork of QymCAD, not a clean upstream tree.
+
+- Coding rules for the product remain in `CLAUDE.md` (via root `AGENTS.md`).
+- Fork-only install, branch, and API/MCP intent notes are in `docs/fork/AGENTS.md`
+  and `docs/fork/README.md`. Read those before changing fork layout or proposing an
+  upstream PR.
+- Do not edit root `AGENTS.md` for fork notes, and do not include `docs/fork/` or
+  `.cursor/rules/fork-local.mdc` in a pull request to QymIs-Tech/QymCAD.
+- Product work for upstream lives on `feat/qymcad-drive` (and later feature
+  branches). Fork `main` may merge ops + features for daily work on this machine.

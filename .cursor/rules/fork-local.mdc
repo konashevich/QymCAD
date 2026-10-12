@@ -5,11 +5,11 @@ alwaysApply: true
 
 This workspace is the konashevich fork of QymCAD, not a clean upstream tree.
 
-- Coding rules for the product remain in `CLAUDE.md` (via root `AGENTS.md`).
-- Fork-only install, branch, and API/MCP intent notes are in `docs/fork/AGENTS.md`
-  and `docs/fork/README.md`. Read those before changing fork layout or proposing an
-  upstream PR.
-- Do not edit root `AGENTS.md` for fork notes, and do not include `docs/fork/` or
-  `.cursor/rules/fork-local.mdc` in a pull request to QymIs-Tech/QymCAD.
-- Product work for upstream lives on `feat/qymcad-drive` (and later feature
-  branches). Fork `main` may merge ops + features for daily work on this machine.
+- Root `AGENTS.md` is what Cursor injects every turn. On fork `main` / `local/ops`
+  it contains the upstream pointer to `CLAUDE.md` plus a fork-only section. Read the
+  whole file.
+- Branch layout: `docs/fork/README.md`.
+- Do not put fork-only notes into a pull request. Upstream PRs open from
+  `feat/qymcad-drive`, where root `AGENTS.md` must stay identical to upstream
+  (short pointer only). Never open the PR from fork `main` or `local/ops`.
+- Product coding rules remain in `CLAUDE.md`.

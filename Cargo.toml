@@ -17,6 +17,7 @@ members = [
     "crates/qymcad-sketch",
     "crates/qymcad-part",
     "crates/qymcad-testkit",
+    "crates/qymcad-drive",
     "crates/qymcad-update",
     "crates/qymcad-meshfit",
     "crates/qymcad-acceptance",

@@ -1096,6 +1096,7 @@ par-name-taken =
 par-name-bad = The name "{ $name }" cannot be used in a formula: letters, digits and "_" only, not starting with a digit
 par-name-constant = The name "{ $name }" belongs to a mathematical constant: a formula reads the constant there, not the parameter. Pick another name
 par-name-is-constant = a formula reads the constant here — rename the parameter
+par-name-reserved = this name is reserved by a formula.
 par-rename-step = parameter rename
 par-edit-step = parameter edit
 par-delete = Delete the parameter

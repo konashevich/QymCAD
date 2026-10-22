@@ -58,8 +58,11 @@ packaging/flatpak/cargo-sources.json
 # the copy the program keeps of a document before saving over it, and the one `convert_qcad.py` keeps
 *.bak
 
-# Personal notes for the coding assistant, kept on the owner's machine
+# Personal notes for the coding assistant, kept on the owner's machine (and by a
+# machine-wide *.local.md ignore). Fork operational notes that must sync in this
+# fork live in docs/fork/ instead and are committed on local/ops only.
 CLAUDE.local.md
+agent-api.local.md
 
 # Samples that cannot be distributed: a link to them in a working copy, checks pass them over when absent
 /samples

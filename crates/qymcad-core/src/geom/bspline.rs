@@ -367,6 +367,10 @@ impl BSpline {
         let p = DEGREE;
         let s = self.multiplicity(u);
         let r = self.knots.iter().rposition(|k| *k == u).expect("the knot");
+        // a knot standing more than the degree times is an end of the curve, not a joint to smooth away
+        if s > p || r < p + 1 {
+            return false;
+        }
         let (first, last) = (r - p, r - s);
         let ord = p + 1;
         let off = first - 1;
@@ -501,6 +505,9 @@ const FIT_LOOKS: usize = 8;
 /// HOW FAR THE CURVE MAY TURN between two places it is fitted by: 10 deg.
 const FIT_TURN: f64 = 10.0 * std::f64::consts::PI / 180.0;
 
+/// THE NARROWEST SPAN OF A FIT THAT IS CUT AGAIN, as a share of the parameter of the curve.
+const NARROWEST_CUT: f64 = 1e-6;
+
 /// HOW FAR THE CURVE MAY TURN ALONG ONE SPAN of its first fit: 30 deg.
 const SPAN_TURN: f64 = 30.0 * std::f64::consts::PI / 180.0;
 
@@ -596,7 +603,11 @@ impl BSpline {
                 samples.push(Sample { u: 1.0, at: last });
             }
             let Some(b) = BSpline::fit(&samples, &knots, c.ends) else { break };
+            // A SPAN NARROWER THAN `NARROWEST_CUT` IS NOT CUT AGAIN: where the curve jumps - the offset of a spline turning
+            // back on itself, its normal turning half a turn at a point - no cubic follows it however short, and cutting on
+            // ran up to the most spans, every cut a fit of all of them: 11.5 s for one offset of a spline of three nodes
             let astray: Vec<usize> = (0..spans)
+                .filter(|&k| grid[k + 1] - grid[k] > NARROWEST_CUT)
                 .filter(|&k| {
                     let us = &looks[k];
                     us.iter().zip(us.iter().skip(1).chain(std::iter::once(&grid[k + 1]))).any(|(x, y)| [*x, 0.5 * (x + y)].iter().any(|u| (c.off)(b.at(*u), *u) > c.tolerance))

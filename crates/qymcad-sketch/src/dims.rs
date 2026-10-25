@@ -24,23 +24,15 @@ use super::*;
 pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> Result<(), &'static str> {
     use qymcad_core::model::Constraint as C;
     let Some(c) = project.sketches.get_mut(si).and_then(|s| s.constraints.get_mut(ci)) else { return Err("sk-dim-gone") };
-    if !v.is_finite() {
-        return Err("sk-dim-must-be-positive");
+    if let Some(key) = dim_value_refusal(c, v) {
+        return Err(key);
     }
     match c {
-        // the angle between two lines is their opening, more than 0 and less than 180 deg; which side it is on is
-        // where the dimension stands, not a sign
-        C::AngleLines { .. } if v <= 0.0 || v >= HALF_TURN_DEG => Err("sk-angle-range"),
-        // three points go round the vertex, so the opening may pass 180 deg, but not a whole turn
-        C::Angle { .. } if v <= 0.0 || v >= 2.0 * HALF_TURN_DEG => Err("sk-angle-range-3pt"),
         C::Angle { deg, expr, .. } | C::AngleLines { deg, expr, .. } => {
             *deg = v;
             expr.clear();
             Ok(())
         }
-        _ if v <= 0.0 => Err("sk-dim-must-be-positive"),
-        // the lengths a sketch takes end where the fields of the bars end: 10 m
-        _ if v > MAX_SKETCH_LENGTH => Err("sk-dim-too-large"),
         // `DistancePL` keeps its own sign - it says which side of the line - and takes the magnitude typed
         C::DistancePL { d, expr, .. } => {
             *d = if *d < 0.0 { -v } else { v };
@@ -58,6 +50,27 @@ pub fn set_dim_value(project: &mut Project, si: usize, ci: usize, v: f64) -> Res
             Ok(())
         }
         _ => Err("sk-dim-gone"),
+    }
+}
+
+/// THE CATALOGUE KEY OF WHY dimension `c` cannot take value `v`, none when it can: asked by the box of the dimension
+/// while the value is typed, and by the door that writes it.
+pub fn dim_value_refusal(c: &qymcad_core::model::Constraint, v: f64) -> Option<&'static str> {
+    use qymcad_core::model::Constraint as C;
+    if !v.is_finite() {
+        return Some("sk-dim-must-be-positive");
+    }
+    match c {
+        // the angle between two lines is their opening, more than 0 and less than 180 deg; which side it is on is
+        // where the dimension stands, not a sign
+        C::AngleLines { .. } if v <= 0.0 || v >= HALF_TURN_DEG => Some("sk-angle-range"),
+        // three points go round the vertex, so the opening may pass 180 deg, but not a whole turn
+        C::Angle { .. } if v <= 0.0 || v >= 2.0 * HALF_TURN_DEG => Some("sk-angle-range-3pt"),
+        C::Angle { .. } | C::AngleLines { .. } => None,
+        _ if v <= 0.0 => Some("sk-dim-must-be-positive"),
+        // the lengths a sketch takes end where the fields of the bars end: 10 m
+        _ if v > MAX_SKETCH_LENGTH => Some("sk-dim-too-large"),
+        _ => None,
     }
 }
 
@@ -284,7 +297,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // A GREY EDGE OF THE BODY CLICKED IS TAKEN INTO THE SKETCH FIRST, as construction, and the dimension is laid on it:
     // a dimension from the edge of the face the sketch sits on holds what it measures to the body. The click went to
     // nothing, and the value typed after it was laid as the length of the line clicked next.
-    if sk.place.dim.is_none() && sk.armed.dim_kind() != 3 {
+    if sk.place.dim.is_none() && sk.armed.dimension() != Some(qymcad_ui_state::DimKind::Radial) {
         let w = qymcad_ui_state::to_world(&*sk.view, rect, pos);
         auto_project_under(sk, rect, si, Point2::new(w.x, w.y));
     }
@@ -358,7 +371,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return true;
     }
     // a radius or a diameter: a circle entity (a diameter or radius dimension) or a circle primitive
-    if sk.armed.dim_kind() == 3 {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Radial) {
         let under = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si);
         let round = |eid: &Id| sk.project.sketches[si].entity(*eid).is_some_and(|e| e.kind.as_circle().is_some() || e.kind.as_arc().is_some());
         if let Some(eid) = under.filter(round) {
@@ -379,8 +392,8 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-diameter"));
                 }
             } else {
-                *sk.inline = qymcad_ui_state::InlineEdit::Circle(eid); // an arc or a fillet
-                sk.dim.focus = true;
+                sk.place.reopen(qymcad_ui_state::PlacingShape::Round(eid)); // an arc or a fillet
+                sk.place.focus = true;
                 *sk.status = Notice::info(qymcad_i18n::tr("sk-enter-arc-radius"));
             }
             return true;
@@ -412,7 +425,7 @@ pub fn dim_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     // that follows the cursor, but a click on a second element switches it to a distance between them
     // (point to line, line to a parallel line, or to an axis). A single line and nothing else is a
     // length.
-    if sk.armed.dim_kind() == 1 {
+    if sk.armed.dimension() == Some(qymcad_ui_state::DimKind::Linear) {
         // the sketch before this pick: resolving it may make an axis of the sketch on demand, and Esc takes that back too
         let before = sk.dim.first.is_none().then(|| Box::new(sk.project.sketches[si].clone()));
         let Some(r) = resolve_dim_ref(sk, rect, pos, si) else {

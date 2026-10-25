@@ -21,11 +21,10 @@ fn fill_widget(s: &mut Session, w: &Widget, text: &str) {
     s.click(w.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text(text);
 }
 
-/// The fields of the bar of options, left to right.
-fn bar_fields(s: &mut Session) -> Vec<Widget> {
-    let mut fields: Vec<Widget> = s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && w.rect.top() < 120.0).collect();
-    fields.sort_by(|a, b| a.rect.left().total_cmp(&b.rect.left()));
-    fields
+/// Fill the row of the box captioned by the catalogue entry `caption`.
+fn step(s: &mut Session, caption: &str, value: f64) {
+    let word = s.word(caption);
+    s.fill(&word, &value.to_string());
 }
 
 /// THE FIELDS STANDING ON THE SHEET - the little boxes a gesture puts up - told apart from the fields of the bar and of
@@ -33,7 +32,7 @@ fn bar_fields(s: &mut Session) -> Vec<Widget> {
 /// the top of the sheet was taken for a field of the bar.
 fn sheet_fields(s: &mut Session) -> Vec<Widget> {
     let sheet = s.canvas();
-    s.widgets().into_iter().filter(|w| w.kind == Kind::TextField && sheet.contains(w.rect.center())).collect()
+    qymcad_acceptance::value_fields(s).into_iter().filter(|w| sheet.contains(w.rect.center())).collect()
 }
 
 /// THE LITTLE BOX THAT POPPED UP BY THE GESTURE: the field on the sheet nearest to `at` - the radius at a corner, the
@@ -439,8 +438,8 @@ probe! {
         pick(&mut s, 10.0, 0.0, false);
         take(&mut s, "tb-rotate-hint");
         s.click_on_sketch(0.0, 0.0);
-        let angle = s.word("sk-angle-placeholder");
-        s.fill_hinted(&angle, "90").key(Key::Enter);
+        let angle = s.word("sk-angle-deg");
+        s.fill(&angle, "90").key(Key::Enter);
         assert!(counts(&mut s).0 == 1, "turning the line added geometry: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [0.0, 20.0]), "the line did not turn a quarter about the origin: it runs {:?}", box_of(&mut s));
     }
@@ -454,19 +453,18 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
-        fill_widget(&mut s, &fields[2], "0");
+        step(&mut s, "opt-step-x", 10.0);
+        step(&mut s, "opt-step-y", 0.0);
         s.key(Key::Enter).key(Key::Enter); // the first Enter only leaves the field - see the check below
         assert!(counts(&mut s).0 == 3, "three copies were asked for: {:?}", counts(&mut s));
         assert!(box_is(&mut s, [0.0, 0.0], [25.0, 0.0]), "the copies do not stand 10 apart along X: {:?}", box_of(&mut s));
-        // opened again by a double click on a copy: the bar comes back with the count that was set
+        // opened again by a double click on a copy: the box comes back with the count that was set
         let at = s.on_sketch(22.5, 0.0);
         s.double_click(at);
-        let again = bar_fields(&mut s);
-        assert!(again.first().map(|w| w.value.clone()).unwrap_or_default() == "3", "the pattern did not open again with its own count: the bar shows {:?}", again.iter().map(|w| w.value.clone()).collect::<Vec<_>>());
+        let again = s.field(&count);
+        assert!(again.value == "3", "the pattern did not open again with its own count: the box shows {:?}", again.value);
     }
 }
 
@@ -477,10 +475,9 @@ probe! {
         line(&mut s, (10.0, 0.0), (20.0, 0.0));
         pick(&mut s, 15.0, 0.0, false);
         take(&mut s, "tb-circ-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "4");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "360");
+        step(&mut s, "cmd-angle", 360.0);
         s.click_on_sketch(0.0, 0.0); // the centre to turn about
         s.key(Key::Enter).key(Key::Enter);
         assert!(counts(&mut s).0 == 4, "four copies were asked for: {:?}", counts(&mut s));
@@ -495,10 +492,9 @@ probe! {
         line(&mut s, (0.0, 0.0), (5.0, 0.0));
         pick(&mut s, 2.5, 0.0, false);
         take(&mut s, "tb-lin-array-hint");
-        let count = s.word("opt-count");
+        let count = s.word("cmd-copies");
         s.fill(&count, "3");
-        let fields = bar_fields(&mut s);
-        fill_widget(&mut s, &fields[1], "10");
+        step(&mut s, "opt-step-x", 10.0);
         s.key(Key::Enter);
         assert!(counts(&mut s).0 == 3, "one Enter after the numbers did not make the pattern: {:?} instead of 3 lines; the status line says {:?}", counts(&mut s), s.status());
     }
@@ -1117,13 +1113,59 @@ probe! {
         pick_shift(&mut s, 45.0, 25.0);
         pick_shift(&mut s, 15.0, 25.0);
         assert_eq!(lit(&mut s), 3, "setup: the three lines of the contour are not all chosen: {}", s.status());
-        assert_eq!(tool(&mut s), 4, "setup: the fillet is not in hand");
+        assert_eq!(tool(&mut s), Some(qymcad::ClickTool::Corner), "setup: the fillet is not in hand");
         let drawn = violet(&mut s);
         assert!(drawn > 40, "setup: no corner of the set is drawn in the colour of one that stands: {drawn} pixels of it");
-        s.key(Key::Escape);
-        assert_eq!(tool(&mut s), 0, "Esc left the fillet in hand: the tool says it is still working");
+        // the first Esc leaves the field of the radius the box opened with, the second puts the tool down
+        s.key(Key::Escape).key(Key::Escape);
+        assert_eq!(tool(&mut s), None, "Esc left the fillet in hand: the tool says it is still working");
         assert_eq!(lit(&mut s), 0, "{} lines are still lit after Esc took the corner tool down", lit(&mut s));
         let after = violet(&mut s);
         assert!(after + 40 < drawn, "the corners of the set are still drawn after Esc: {drawn} pixels of violet before, {after} after");
+    }
+}
+
+/// TWO LINES DRAWN APART, the end of one tied to the end of the other by a coincidence: answers where the corner they
+/// make stands.
+fn two_lines_tied_at_their_ends(s: &mut Session) -> qymcad::Pos2 {
+    line(s, (30.0, 0.0), (0.0, 0.0));
+    line(s, (0.0, 4.0), (0.0, 30.0));
+    pick(s, 0.0, 0.0, false);
+    pick(s, 0.0, 4.0, true);
+    let hint = s.word("con-coincident-hint");
+    s.press_hint(&hint);
+    s.key(Key::Escape);
+    let places = s.document().sketches[0].places.clone();
+    let corner = places.iter().find(|q| q[0].abs() < 1e-6 && q[1] > -1e-6 && q[1] < 4.0 + 1e-6).unwrap_or_else(|| panic!("the two ends did not come together: {places:?}"));
+    s.on_sketch(corner[0], corner[1])
+}
+
+probe! {
+    /// A FILLET IN THE CORNER OF TWO ENDS TIED BY A COINCIDENCE rounds it as a corner both lines end at. Reported
+    /// behaviour: the corner was not taken.
+    fn a_fillet_takes_the_corner_of_two_ends_tied_together() {
+        let mut s = empty_sketch();
+        let corner = two_lines_tied_at_their_ends(&mut s);
+        take(&mut s, "tb-fillet-sketch-hint");
+        s.click(corner);
+        let field = field_near(&mut s, corner);
+        fill_widget(&mut s, &field, "3");
+        s.key(Key::Enter);
+        assert!(counts(&mut s).1 == 1, "the corner of the two tied ends did not become an arc: {:?}; the program says {:?}", counts(&mut s), s.status());
+    }
+}
+
+probe! {
+    /// A CHAMFER IN THE CORNER OF TWO ENDS TIED BY A COINCIDENCE cuts it as a corner both lines end at. Reported
+    /// behaviour: the corner was not taken.
+    fn a_chamfer_takes_the_corner_of_two_ends_tied_together() {
+        let mut s = empty_sketch();
+        let corner = two_lines_tied_at_their_ends(&mut s);
+        take(&mut s, "tb-chamfer-sketch-hint");
+        s.click(corner);
+        let field = field_near(&mut s, corner);
+        fill_widget(&mut s, &field, "3");
+        s.key(Key::Enter);
+        assert!(counts(&mut s).0 == 3, "the corner of the two tied ends did not become a line across: {:?}; the program says {:?}", counts(&mut s), s.status());
     }
 }

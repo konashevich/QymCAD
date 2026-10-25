@@ -32,6 +32,7 @@ pub static FACE_COPY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/20-face-copy",
     not_applicable: &[
@@ -76,6 +77,7 @@ pub static OFFSET_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/27-offset-surface",
     not_applicable: &[
@@ -118,6 +120,7 @@ pub static REMOVE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/12-remove-face",
     not_applicable: &[
@@ -145,9 +148,9 @@ pub static BOOLEAN: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "f-cut-ab", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 5000.0, largest: 5000.0 }) },
-        Mode { word: "f-union", clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
-        Mode { word: "f-intersect", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 1000.0, largest: 1000.0 }) },
+        Mode { word: "f-cut-ab", arg: None, clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 5000.0, largest: 5000.0 }) },
+        Mode { word: "f-union", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
+        Mode { word: "f-intersect", arg: None, clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 1000.0, largest: 1000.0 }) },
     ]],
     result: Outcome::Bodies { count: 1, volume: 5000.0, largest: 5000.0 },
     node: "BodyBoolean",
@@ -158,6 +161,7 @@ pub static BOOLEAN: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/25-boolean",
     not_applicable: &[
@@ -186,7 +190,10 @@ pub static PATCH: Tool = Tool {
     wrong_picks: &[],
     words: &[],
     fields: &[],
-    modes: &[&[Mode { word: "cmd-patch-flat", clicks: None, outcome: Some(PATCHED) }, Mode { word: "cmd-patch-tangent", clicks: None, outcome: Some(PATCHED) }]],
+    modes: &[&[
+        Mode { word: "cmd-patch-flat", arg: None, clicks: None, outcome: Some(PATCHED) },
+        Mode { word: "cmd-patch-tangent", arg: None, clicks: None, outcome: Some(PATCHED) },
+    ]],
     result: PATCHED,
     node: "Patch",
     undo: "f-patch",
@@ -196,6 +203,7 @@ pub static PATCH: Tool = Tool {
     dependency: Some(Node { kind: "Hole", row: Some("feat-name-hole") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/22-patch",
     not_applicable: &[
@@ -230,6 +238,7 @@ pub static SKETCH_ON_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "general/04-datums",
     not_applicable: &[
@@ -240,6 +249,7 @@ pub static SKETCH_ON_FACE: Tool = Tool {
         (7, "the sketch opens on the click: there is nothing to show before it"),
         (8, "the sketch is opened by the click on the face, and it is left by \"Finish\", not applied with Enter"),
         (9, "Esc before the click puts the pencil down, which is point 1; after it the sketch is open and left by \"Finish\""),
+        (11, "Ctrl+Z in the sketch the click opened walks the sketch's own steps and stops at its first; the sketch is taken back by one Ctrl+Z after \"Finish\", which undo_redo::inside_a_sketch_undo_walks_its_own_steps_and_a_finished_sketch_is_one_step checks"),
         (13, "the sketch is reopened by a double click on its row, which is the sketch's own contract"),
         (14, "a change above is carried by the sketch on the face, which is the matter of in-context references"),
         (17, "any flat face can carry a sketch: there is nothing the kernel could refuse"),
@@ -287,6 +297,7 @@ pub static STITCH: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/23-stitch",
     not_applicable: &[
@@ -322,6 +333,7 @@ pub static REPLACE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/21-surface-replace",
     not_applicable: &[
@@ -361,6 +373,7 @@ pub static TRIM_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (30, 2000),
     help: "part/24-trim",
     not_applicable: &[

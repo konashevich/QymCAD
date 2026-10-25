@@ -35,14 +35,14 @@ fn an_offset_of_an_ellipse_follows_it_and_comes_back_with_undo() {
     let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
     let mut hand = Hand::new(&mut app);
-    hand.sk_tool(8);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Ellipse);
     for (x, y) in [(0.0, 0.0), (12.0, 0.0), (0.0, 6.0)] {
         hand.click2d(x, y);
     }
     hand.key(egui::Key::Escape).key(egui::Key::Escape);
     // the ellipse clicked on its way, offset 3 outwards
     let on_it = (12.0 * 0.6, 6.0 * 0.8);
-    hand.sk_tool(0).click2d(on_it.0, on_it.1);
+    hand.sk_select().click2d(on_it.0, on_it.1);
     assert!(hand.press_hint(&crate::i18n::tr("tb-offset-hint")), "no sketch offset button");
     hand.click2d(20.0, 0.0);
     hand.type_text("3").key(egui::Key::Enter);
@@ -59,7 +59,7 @@ fn an_offset_of_an_ellipse_follows_it_and_comes_back_with_undo() {
     if hand.typing() {
         hand.chord(egui::Modifiers::COMMAND, egui::Key::A).type_text("15");
     } else {
-        assert!(hand.type_into_hinted(&crate::i18n::tr("sk-expr-example"), 15.0), "no field of a dimension came up; the status line says {:?}", hand.app.status);
+        assert!(hand.type_into_hinted(&crate::i18n::tr("f-number-or-expr"), 15.0), "no field of a dimension came up; the status line says {:?}", hand.app.status);
     }
     hand.key(egui::Key::Enter);
     hand.key(egui::Key::Escape).key(egui::Key::Escape);

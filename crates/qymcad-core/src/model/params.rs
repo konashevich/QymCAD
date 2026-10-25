@@ -27,7 +27,7 @@ impl Project {
                 let DimTarget::Feature { node, key } = &nd.target else { continue };
                 let v = match self.feat_dim(*node, key).filter(|e| !e.trim().is_empty()) {
                     Some(e) => crate::expr::eval(e, &m).ok(),
-                    None => self.timeline.iter().find(|n| n.id == *node).and_then(|n| n.kind.dim(key)),
+                    None => self.kept_number(*node, key),
                 };
                 if let Some(v) = v {
                     changed |= m.get(&nd.name).is_none_or(|o| (o - v).abs() > 1e-12);
@@ -77,6 +77,19 @@ impl Project {
     /// Name a feature parameter (`height`, `radius`, `thickness` and so on).
     pub fn add_named_feat_dim(&mut self, name: String, node: Id, key: &str) -> bool {
         self.name_dim(name, DimTarget::Feature { node, key: key.to_string() })
+    }
+
+    /// THE NUMBER `key` OF `node` HOLDS WITHOUT ITS FORMULA: the number kept in a node of the timeline, or the value a
+    /// slot of a joint holds - what drives it, or, free, where the part stands (`angle`, `offset`, `offset2`). A joint
+    /// keeps its formulas under its own id as a node does, so a name given to a value of a joint reads it here;
+    /// searched among the nodes alone, a named offset of a slider with no formula gave formulas nothing.
+    pub fn kept_number(&self, node: Id, key: &str) -> Option<f64> {
+        if let Some(n) = self.timeline.iter().find(|n| n.id == node) {
+            return n.kind.dim(key).or_else(|| self.datum_value(&n.kind, key));
+        }
+        let Some(j) = self.joints.iter().find(|j| j.id == node) else { return self.item_value(node, key) };
+        let Some(slot) = ["angle", "offset", "offset2"].iter().position(|k| *k == key) else { return self.item_value(node, key) };
+        Some(j.drive[slot].unwrap_or([j.angle, j.offset, j.offset2][slot]))
     }
 
     /// Whether a driver name is already taken by something else (a global parameter or another
@@ -181,7 +194,7 @@ impl Project {
                 true
             }
             DimTarget::Feature { node, key } => {
-                if self.timeline.iter().find(|n| n.id == *node).and_then(|n| n.kind.dim(key)).is_none() {
+                if self.kept_number(*node, key).is_none() {
                     return false; // This feature has no such parameter.
                 }
                 // For a feature the number lives in the expression: that is how the rebuild applies it
@@ -295,8 +308,13 @@ impl Project {
     /// after a single keystroke, so only the expressions that actually mention the name are considered.
     pub fn mark_param_dependents_dirty_for(&mut self, name: &str) {
         let ids: Vec<Id> = self.feat_dims.iter().filter(|(_, m)| m.values().any(|e| crate::expr::mentions(e, name))).map(|(id, _)| *id).collect();
-        for id in ids {
-            self.mark_node_dirty(id);
+        for id in &ids {
+            self.mark_node_dirty(*id);
+        }
+        // a value of an item of a sketch read by a formula: the sketch is solved anew, its consumers follow
+        let items: Vec<Id> = (0..self.sketches.len()).filter(|si| self.sketch_item_ids(*si).iter().any(|i| ids.contains(i))).map(|si| self.sketches[si].id).collect();
+        for sid in items {
+            self.mark_sketch_dirty(sid);
         }
         // Sketch dimensions using this parameter: the sketch is re-solved and its consumers follow it down
         // the timeline.
@@ -306,11 +324,13 @@ impl Project {
         }
     }
 
-    /// DOES THE PLACEMENT COUNT FROM ONE OF `names`: the angle or an offset of a mate written as a formula. A mate is no
+    /// DOES THE PLACEMENT COUNT FROM ONE OF `names`: the angle or an offset of a mate, or the ratio of a relation of
+    /// mates, written as a formula. A mate is no
     /// node of the timeline - its formulas stand in `feat_dims` under its own id - so there is nothing to mark; the
     /// placement pass of every rebuild solves it (`solve_joints`), and a rebuild has to be asked for.
     pub fn placement_counts_from(&self, names: &[String]) -> bool {
-        self.joints.iter().filter_map(|j| self.feat_dims.get(&j.id)).any(|m| m.values().any(|e| names.iter().any(|n| crate::expr::mentions(e, n))))
+        let ids = self.joints.iter().map(|j| j.id).chain(self.relations.iter().map(|r| r.id));
+        ids.filter_map(|id| self.feat_dims.get(&id)).any(|m| m.values().any(|e| names.iter().any(|n| crate::expr::mentions(e, n))))
     }
 
     /// Mark every feature that has a parametric dimension expression as dirty. Called after `parameters`
@@ -335,6 +355,10 @@ impl Project {
         // THE VALUES ARE WORKED OUT FROM THE FORMULAS ALONE, in the order they read each other (`work_out_names`). They
         // used to start from the values before and go round up to eight times: `a = b+1` with `b = a+1` grew on every
         // evaluation (28 / 29, 60 / 61, 76 / 77), and an undo, evaluating once more, kept the grown numbers.
+        // THE VALUES OF THE ITEMS ARE IMPOSED FIRST, and the names worked out again over them: a parameter reading the
+        // count of a pattern driven by another parameter read the count before the pattern took it, a step behind
+        let first = self.work_out_names();
+        errs.extend(self.impose_item_values(&first.values).into_iter().map(|f| (f.formula, f.error)));
         let worked = self.work_out_names();
         for p in &mut self.parameters {
             if p.name.is_empty() {

@@ -3,19 +3,11 @@
 //! They used to sit inside the frame's body, where "what the frame does" and "what it draws" could not be told
 //! apart and editing one command touched the whole life cycle of the frame.
 
-pub(crate) use qymcad_part::*;
 use super::*;
 
 // the bar of the tools of a workbench, drawn from the catalogue
 mod tool_bar;
 pub(crate) use tool_bar::{wb_toolbar, BAR_MARGIN};
-
-impl App {
-    /// The command bar of the Part workbench, through its own doorway.
-    pub(crate) fn feat_command_bar(&mut self, ui: &mut egui::Ui) {
-        crate::gui::panels_bars::feat_command_bar(&mut self.part_ctx(), ui);
-    }
-}
 
 pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     use crate::gui::bar_menu::BarMenu as _;
@@ -238,6 +230,10 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
             }
             if ui.button(format!("{} {}", ph::INFO, qymcad_i18n::tr("help-about"))).clicked() {
                 bc.win.open(WinKind::About);
+                ui.close();
+            }
+            if ui.button(format!("{} {}", ph::HEART, qymcad_i18n::tr("help-support"))).clicked() {
+                bc.win.open(WinKind::Support);
                 ui.close();
             }
         });

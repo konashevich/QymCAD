@@ -24,7 +24,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
     // A DRAWING TOOL IN HAND TAKES NO DRAG: picking up a point, a dimension or the selection, and the selection box, are
     // the work of selection mode. Reported behaviour (issue #33): with Line in hand a drag over empty space selected
     // what lay in the band, and a drag from a point moved it.
-    if sk.armed.draw_kind() != 0 {
+    if sk.armed.drawing().is_some() {
         return;
     }
     let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
@@ -167,7 +167,9 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
         if no_other && primary {
             let on_empty = matches!(*sk.sel, qymcad_ui_state::Sel::Sketch(si) if qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses) == Some(si))
                 && pp.is_some_and(|p| if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel { sketch_hit(&sk.pick(), rect, p, si).is_none() } else { false });
-            if ctrl || on_empty {
+            // a tool taking profiles takes them by a box too, wherever the drag starts: no contour is dragged
+            let profiles = qymcad_ui_state::profile_sketch(&*sk.armed, &*sk.cmd).is_some();
+            if ctrl || on_empty || profiles {
                 sk.tree_sel.box_start = resp.interact_pointer_pos();
             } else if let (Some(hw), Some(pp)) = (handle, resp.interact_pointer_pos()) {
                 if sh.at(hw).distance(pp) <= qymcad_ui_state::grab::grab(sk.set, Grab::Point) {
@@ -195,7 +197,7 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
 /// cut once per drag - otherwise the same piece would keep being trimmed until its neighbours
 /// disappeared.
 pub fn power_trim_drag(sk: &mut qymcad_ui_state::SketchCtx, resp: &egui::Response, rect: Rect) {
-    if sk.armed.click_op() != 1 {
+    if sk.armed.click_tool() != Some(qymcad_ui_state::ClickTool::Trim) {
         return;
     }
     // THE LEFT BUTTON ONLY: the sheet is moved with the middle one (or the gesture of the scheme), and a move of the
@@ -313,6 +315,12 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
     if let Some(id) = qymcad_pick::nearest_sketch_point(&sk.pick(), rect, pos, si) {
         return Some(qymcad_ui_state::DimRef::Point(id));
     }
+    // 1b) THE POINT A CENTRE LINE CROSSES A CIRCLE OR AN ARC AT, the pointer pulled to it as a drawing is: the dimension
+    // stands on that point, far side or near, top or bottom. Taken as the curve, it was the least distance - clicked on
+    // the far sides of two circles, it measured between the near ones
+    if let Some(id) = quadrant_under(sk, rect, pos, si) {
+        return Some(qymcad_ui_state::DimRef::Point(id));
+    }
     // 2) the curve under the cursor, of whatever kind: a line by its ends; a circle, an arc, an ellipse, a spline is the
     // curve itself - a distance to it is the least one, to its rim, as the person sees it measured
     if let Some(r) = qymcad_pick::curve_or_caption_under(&sk.pick(), rect, pos, si).map(|eid| curve_ref(sk, si, eid)) {
@@ -333,6 +341,33 @@ pub fn resolve_dim_ref(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos
         return Some(qymcad_ui_state::DimRef::Point(qymcad_ui_state::materialize_ref(&mut *sk.project, si, r)));
     }
     None
+}
+
+/// THE POINT OF A CIRCLE OR AN ARC UNDER THE POINTER where its centre line crosses it - one of its quadrants - laid as a
+/// point of the sketch held there: on the curve, level with the centre or upright of it. `None` when no such point is in
+/// reach of the pointer.
+fn quadrant_under(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> Option<Id> {
+    use qymcad_core::model::{Constraint, SketchPoint};
+    let sh = qymcad_ui_state::Sheet { view: *sk.view, rect };
+    let reach = qymcad_ui_state::grab::grab(sk.set, Grab::Point);
+    let s = sk.project.sketches.get(si)?;
+    let (entity, centre, at) = s
+        .entities
+        .iter()
+        .filter_map(|e| Some((e, e.kind.round_centre()?, qymcad_core::model::curve::Curve::of(s, e)?)))
+        .flat_map(|(e, c, curve)| curve.quadrants().into_iter().map(move |q| (e.clone(), c, q)))
+        .map(|t| (sh.at(t.2).distance(pos), t))
+        .filter(|(d, _)| *d <= reach)
+        .min_by(|a, b| a.0.total_cmp(&b.0))?
+        .1;
+    let c = qymcad_ui_state::sketch_pt(&*sk.project, si, centre)?;
+    let id = sk.project.alloc_id();
+    let level = if (at.y - c.y).abs() < (at.x - c.x).abs() { Constraint::Horizontal { a: centre, b: id } } else { Constraint::Vertical { a: centre, b: id } };
+    let s = &mut sk.project.sketches[si];
+    s.points.push(SketchPoint { id, x: at.x, y: at.y });
+    s.constraints.push(qymcad_core::model::point_on(&entity, id));
+    s.constraints.push(level);
+    Some(id)
 }
 
 pub fn power_trim_path_test(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, a: Pos2, b: Pos2) -> usize {
@@ -548,7 +583,11 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
         }
     } else if sk.tree_sel.box_start.is_some() {
         if resp.drag_stopped() {
-            if let (Some(a), Some(b)) = (sk.tree_sel.box_start, resp.interact_pointer_pos()) {
+            if let (Some(a), Some(b), Some(si)) = (sk.tree_sel.box_start, resp.interact_pointer_pos(), qymcad_ui_state::profile_sketch(&*sk.armed, &*sk.cmd)) {
+                let took = qymcad_ui_state::contours_in_box_2d(&*sk.project, &*sk.view, rect, qymcad_ui_state::ScreenBox { from: a, to: b }, si);
+                let adding = if ctx.input(|i| i.modifiers.shift) { qymcad_ui_state::Adding::Yes } else { qymcad_ui_state::Adding::No };
+                qymcad_ui_state::take_profiles(&mut *sk.gsel, &mut *sk.status, took, adding);
+            } else if let (Some(a), Some(b)) = (sk.tree_sel.box_start, resp.interact_pointer_pos()) {
                 // without Shift the box REPLACES the selection; with Shift it adds to it. A TOOL WAITING FOR ITS CURVES is
                 // given them by the box as by its clicks - added, the tool left in hand. Cleared with the selection, the
                 // tool's mode went and its name stayed on the bar: Enter did nothing. Reported behaviour: "the tool is put
@@ -558,7 +597,7 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
                     sk.sel_sk.clear(); // the selection and whatever was waiting for it
                 }
                 qymcad_ui_state::box_select(qymcad_ui_state::editing_in!(sk), &mut *sk.sel_sk, *sk.sketch_ses, rect, a, b);
-                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
+                if sk.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset) && sk.sel_sk.items.iter().any(|it| it.kind == qymcad_ui_state::ItemKind::Curve) {
                     *sk.status = Notice::info(qymcad_i18n::tr("sk-offset-side"));
                     // what to do next, not how many were chosen
                 }
@@ -569,7 +608,7 @@ pub fn sketch_drag_update(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Conte
             }
             sk.tree_sel.box_start = None;
         }
-    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.draw_kind() == 0 {
+    } else if resp.dragged_by(egui::PointerButton::Primary) && sk.armed.drawing().is_none() {
         // the fallback pan is for the left button only, and not with a drawing tool in hand - the drawing would slide
         // away under the tool - a middle drag is served by the EXPLICIT
         // handler below (otherwise the middle button would pan twice, at double speed)

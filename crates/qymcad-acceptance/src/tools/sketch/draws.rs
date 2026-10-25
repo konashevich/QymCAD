@@ -39,6 +39,7 @@ pub static LINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/01-line",
     not_applicable: &[
@@ -120,9 +121,9 @@ pub static RECT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-rect-2corners", clicks: None, outcome: Some(RECT_BY_CORNERS) },
-        Mode { word: "opt-rect-centre", clicks: None, outcome: Some(RECT_FROM_CENTRE) },
-        Mode { word: "opt-rect-3pt", clicks: Some(&[(0.0, 0.0), (40.0, 0.0), (40.0, 20.0)]), outcome: Some(RECT_BY_THREE) },
+        Mode { word: "opt-rect-2corners", arg: None, clicks: None, outcome: Some(RECT_BY_CORNERS) },
+        Mode { word: "opt-rect-centre", arg: None, clicks: None, outcome: Some(RECT_FROM_CENTRE) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(0.0, 0.0), (40.0, 0.0), (40.0, 20.0)]), outcome: Some(RECT_BY_THREE) },
     ]],
     result: RECT_BY_CORNERS,
     node: "Sketch",
@@ -133,6 +134,7 @@ pub static RECT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/02-rect",
     not_applicable: &[
@@ -195,11 +197,11 @@ pub static CIRCLE: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-circle-centre-radius", clicks: None, outcome: Some(CIRCLE_BY_RADIUS) },
-        Mode { word: "opt-circle-2pt", clicks: None, outcome: Some(CIRCLE_BY_TWO) },
-        Mode { word: "opt-rect-3pt", clicks: Some(&[(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0)]), outcome: Some(CIRCLE_BY_THREE) },
+        Mode { word: "opt-circle-centre-radius", arg: None, clicks: None, outcome: Some(CIRCLE_BY_RADIUS) },
+        Mode { word: "opt-circle-2pt", arg: None, clicks: None, outcome: Some(CIRCLE_BY_TWO) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0)]), outcome: Some(CIRCLE_BY_THREE) },
         // there is nothing drawn to touch, so the tool must say so rather than draw anything
-        Mode { word: "opt-tangent-m", clicks: None, outcome: None },
+        Mode { word: "opt-tangent-m", arg: None, clicks: None, outcome: None },
     ]],
     result: CIRCLE_BY_RADIUS,
     node: "Sketch",
@@ -210,6 +212,7 @@ pub static CIRCLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/03-circle",
     not_applicable: &[
@@ -261,6 +264,7 @@ pub static POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/05-point",
     not_applicable: &[
@@ -325,10 +329,10 @@ pub static ARC: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-arc-cse", clicks: None, outcome: Some(ARC_BY_CENTRE) },
-        Mode { word: "opt-rect-3pt", clicks: Some(&[(0.0, 0.0), (20.0, 0.0), (10.0, 5.0)]), outcome: Some(ARC_BY_THREE) },
+        Mode { word: "opt-arc-cse", arg: None, clicks: None, outcome: Some(ARC_BY_CENTRE) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(0.0, 0.0), (20.0, 0.0), (10.0, 5.0)]), outcome: Some(ARC_BY_THREE) },
         // there is nothing drawn to continue smoothly from, so the tool must say so rather than draw anything
-        Mode { word: "opt-tangent", clicks: None, outcome: None },
+        Mode { word: "opt-tangent", arg: None, clicks: None, outcome: None },
     ]],
     result: ARC_BY_CENTRE,
     node: "Sketch",
@@ -339,6 +343,7 @@ pub static ARC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/04-arc",
     not_applicable: &[
@@ -425,9 +430,9 @@ pub static POLYGON: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "opt-sides", by_placeholder: false, when: When::Before, class: Class::Count, typical: 6.0, lo: 3.0, hi: 12.0, zero: false, negative: false, outcome: polygon_of }],
     modes: &[&[
-        Mode { word: "opt-polygon-inscribed", clicks: None, outcome: Some(polygon_shape(6)) },
-        Mode { word: "opt-polygon-circumscribed", clicks: None, outcome: Some(POLYGON_CIRCUMSCRIBED) },
-        Mode { word: "opt-by-edge", clicks: None, outcome: Some(polygon_shape(6)) },
+        Mode { word: "opt-polygon-inscribed", arg: None, clicks: None, outcome: Some(polygon_shape(6)) },
+        Mode { word: "opt-polygon-circumscribed", arg: None, clicks: None, outcome: Some(POLYGON_CIRCUMSCRIBED) },
+        Mode { word: "opt-by-edge", arg: None, clicks: None, outcome: Some(polygon_shape(6)) },
     ]],
     result: polygon_shape(6),
     node: "Sketch",
@@ -438,6 +443,7 @@ pub static POLYGON: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/06-polygon",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
@@ -480,6 +486,7 @@ pub static SLOT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/07-slot",
     not_applicable: &[
@@ -532,6 +539,7 @@ pub static ELLIPSE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/08-ellipse",
     not_applicable: &[
@@ -584,6 +592,7 @@ pub static SPLINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/09-spline",
     not_applicable: &[
@@ -642,7 +651,7 @@ pub static TEXT: Tool = Tool {
         enter: false,
     }],
     fields: &[Field {
-        caption: "opt-height-short",
+        caption: "sk-height",
         by_placeholder: false,
         when: When::Before,
         class: Class::Length,
@@ -653,7 +662,7 @@ pub static TEXT: Tool = Tool {
         negative: false,
         outcome: text_of_height,
     }],
-    modes: &[&[Mode { word: "opt-note", clicks: None, outcome: Some(NOTE) }]],
+    modes: &[&[Mode { word: "opt-note", arg: None, clicks: None, outcome: Some(NOTE) }]],
     result: ONE_TEXT,
     node: "Sketch",
     undo: "sk-text",
@@ -664,6 +673,7 @@ pub static TEXT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     help: "sketch/10-text",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],

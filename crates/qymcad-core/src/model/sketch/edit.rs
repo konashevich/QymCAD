@@ -3,28 +3,92 @@
 use super::*;
 
 impl Project {
-    /// THE WIDTH AND THE HEIGHT DIMENSIONS OF THE RECTANGLE WITH SIDE `side`, laid when it has none: a dimension of a
-    /// side, or of the side across from it, is its width or its height. `None` when the side is no rectangle's.
-    pub fn rect_dims(&mut self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+    /// THE RECTANGLE WITH SIDE `side` in sketch `si`; none when the side is no rectangle's. Every question about a
+    /// rectangle by one of its sides starts here.
+    fn rect_of(&self, si: usize, side: Id) -> Option<crate::model::SketchRect> {
+        self.sketches.get(si)?.rects().iter().find(|r| r.sides.contains(&side)).cloned()
+    }
+    /// THE DIMENSIONS THE RECTANGLE WITH SIDE `side` IS HELD BY, each where it has one: a dimension of a side, or of the
+    /// side across from it, is its width or its height.
+    fn rect_dims_found(&self, si: usize, side: Id) -> Option<RectDimsFound> {
         let s = self.sketches.get(si)?;
-        let r = s.rects().iter().find(|r| r.sides.contains(&side))?.clone();
-        let [c0, c1, c2, c3] = r.corners;
+        let [c0, c1, c2, c3] = self.rect_of(si, side)?.corners;
         let find =
-            |pairs: [(Id, Id); 2]| s.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if pairs.iter().any(|&(x, y)| (a == x && b == y) || (a == y && b == x))));
-        let (width, height) = (find([(c0, c1), (c3, c2)]), find([(c1, c2), (c0, c3)]));
-        match (width, height) {
-            (Some(width), Some(height)) => Some(crate::model::RectDims { width, height }),
-            _ => {
-                // the one there is goes, and both are laid afresh beside each other
-                let sk = self.sketches.get_mut(si)?;
-                if let Some(i) = width.or(height) {
-                    sk.constraints.remove(i);
-                }
-                self.dimension_rect(si, side);
-                let n = self.sketches[si].constraints.len();
-                Some(crate::model::RectDims { width: n - 2, height: n - 1 })
+            |pairs: [[Id; 2]; 2]| s.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if pairs.iter().any(|&[x, y]| (a == x && b == y) || (a == y && b == x))));
+        Some(RectDimsFound { width: find([[c0, c1], [c3, c2]]), height: find([[c1, c2], [c0, c3]]) })
+    }
+    /// THE WIDTH AND THE HEIGHT DIMENSIONS OF THE RECTANGLE WITH SIDE `side`, laid when it has none. `None` when the
+    /// side is no rectangle's.
+    pub fn rect_dims(&mut self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+        let found = self.rect_dims_found(si, side)?;
+        if let (Some(width), Some(height)) = (found.width, found.height) {
+            return Some(crate::model::RectDims { width, height });
+        }
+        // the one there is goes, and both are laid afresh beside each other
+        if let Some(i) = found.width.or(found.height) {
+            self.sketches.get_mut(si)?.constraints.remove(i);
+        }
+        self.dimension_rect(si, side);
+        let n = self.sketches[si].constraints.len();
+        Some(crate::model::RectDims { width: n - 2, height: n - 1 })
+    }
+    /// THE WIDTH AND THE HEIGHT DIMENSIONS THE RECTANGLE WITH SIDE `side` HOLDS, both of them; none while it holds fewer -
+    /// nothing is laid. A double click on a rectangle opens its sizes by them, and lays them only once a size is typed.
+    pub fn rect_dims_held(&self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+        let found = self.rect_dims_found(si, side)?;
+        Some(crate::model::RectDims { width: found.width?, height: found.height? })
+    }
+    /// THE CORNERS OF THE RECTANGLE WITH SIDE `side`, in order round it; none when the side is no rectangle's.
+    pub fn rect_corners(&self, si: usize, side: Id) -> Option<[Point2; 4]> {
+        let s = self.sketches.get(si)?;
+        let r = self.rect_of(si, side)?;
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        Some([at(r.corners[0])?, at(r.corners[1])?, at(r.corners[2])?, at(r.corners[3])?])
+    }
+    /// THE RECTANGLE WITH SIDE `side` GIVEN `size` BY MOVING ITS CORNERS: the width along its first side, the height
+    /// along the side after it, the corner it was drawn from - or its centre - left where it stands. The points and the
+    /// lines are the same ones, so what is tied to them stays tied: a rectangle laid anew for every figure typed took
+    /// new ids each time, and the ties a snap had given its corners went with the old ones. Its loops are made again round
+    /// the corners moved. False when the side is no rectangle's.
+    pub fn size_rect(&mut self, si: usize, side: Id, size: crate::model::RectSize) -> bool {
+        let (Some(r), Some(p)) = (self.rect_of(si, side), self.rect_corners(si, side)) else { return false };
+        let unit = |x: f64, y: f64| {
+            let l = x.hypot(y);
+            (l > 1e-12).then(|| Point2::new(x / l, y / l))
+        };
+        let u = unit(p[1].x - p[0].x, p[1].y - p[0].y).unwrap_or(Point2::new(1.0, 0.0));
+        let v = unit(p[3].x - p[0].x, p[3].y - p[0].y).unwrap_or(Point2::new(-u.y, u.x));
+        let (w, h) = (size.width, size.height);
+        // where each corner stands from the first, in order round the rectangle
+        let off = [Point2::new(0.0, 0.0), Point2::new(u.x * w, u.y * w), Point2::new(u.x * w + v.x * h, u.y * w + v.y * h), Point2::new(v.x * h, v.y * h)];
+        let half = Point2::new(off[2].x / 2.0, off[2].y / 2.0);
+        let at = |id: Id| self.sketches[si].points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        let first = match r.anchor {
+            crate::model::RectAnchor::Corner(c) => {
+                let k = r.corners.iter().position(|&x| x == c).unwrap_or(0);
+                Point2::new(p[k].x - off[k].x, p[k].y - off[k].y)
+            }
+            crate::model::RectAnchor::Centre => {
+                let c = at(r.centre).unwrap_or(Point2::new((p[0].x + p[2].x) / 2.0, (p[0].y + p[2].y) / 2.0));
+                Point2::new(c.x - half.x, c.y - half.y)
+            }
+        };
+        /// A point of the rectangle and where it goes.
+        struct Goes {
+            id: Id,
+            to: Point2,
+        }
+        let mut moved: Vec<Goes> = r.corners.iter().zip(off).map(|(&id, o)| Goes { id, to: Point2::new(first.x + o.x, first.y + o.y) }).collect();
+        moved.push(Goes { id: r.centre, to: Point2::new(first.x + half.x, first.y + half.y) });
+        for q in self.sketches[si].points.iter_mut() {
+            if let Some(g) = moved.iter().find(|g| g.id == q.id) {
+                (q.x, q.y) = (g.to.x, g.to.y);
             }
         }
+        // the loops its lines are drawn by go with the corners: laid anew, a rectangle made its loops anew, and moved by
+        // its corners alone its lines stood where they were until the next rebuild of the sketch
+        self.regen_sketch_moved(si, &moved.iter().map(|g| g.id).collect());
+        true
     }
     /// THE TWO POINTS A SIZE OF THE SLOT WITH CURVE `curve` IS MEASURED BETWEEN: the centres of its ends for its length,
     /// the two points its sides touch its first end at - twice its radius apart - for its width. `None` when the curve
@@ -50,30 +114,31 @@ impl Project {
     /// sketch solved - the slot follows, its sides touching both ends. Answers whether the curve is a slot's.
     pub fn set_slot_size(&mut self, si: usize, curve: Id, which: crate::model::SlotSize, v: f64) -> bool {
         let Some([x, y]) = self.slot_size_ends(si, curve, which) else { return false };
+        let held = self.slot_size_dim(si, curve, which);
         let s = &mut self.sketches[si];
-        let held = s.constraints.iter_mut().find_map(|c| match c {
-            Constraint::Distance { a, b, axis: 0, d, .. } if (*a == x && *b == y) || (*a == y && *b == x) => Some(d),
-            _ => None,
-        });
-        match held {
-            Some(d) => *d = v,
-            None => s.constraints.push(Constraint::Distance { a: x, b: y, d: v, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }),
+        match held.and_then(|ci| s.constraints.get_mut(ci)) {
+            Some(Constraint::Distance { d, .. }) => *d = v,
+            _ => s.constraints.push(Constraint::Distance { a: x, b: y, d: v, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None }),
         }
         self.solve_sketch(si);
         true
+    }
+    /// THE PLACE AMONG THE CONSTRAINTS OF THE DIMENSION A SIZE OF THE SLOT WITH CURVE `curve` IS HELD BY: none while the
+    /// size has no dimension, or the curve is no slot's. The box of a slot makes it a reference or names it by it.
+    pub fn slot_size_dim(&self, si: usize, curve: Id, which: crate::model::SlotSize) -> Option<usize> {
+        let [x, y] = self.slot_size_ends(si, curve, which)?;
+        self.sketches.get(si)?.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if (a == x && b == y) || (a == y && b == x)))
     }
     /// THE WIDTH AND THE HEIGHT OF THE RECTANGLE WITH SIDE `side` LAID AS DIMENSIONS, at the lengths its first two sides
     /// stand at, each led out a fifth of the shorter side beyond its side (a positive offset is to the right of a side
     /// run from its first corner, and the corners go round anticlockwise - the dimensions stand outside). Returns
     /// whether the rectangle was found.
     pub fn dimension_rect(&mut self, si: usize, side: Id) -> bool {
-        let Some(s) = self.sketches.get_mut(si) else { return false };
-        let Some(r) = s.rects().iter().find(|r| r.sides.contains(&side)).cloned() else { return false };
-        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
-        let (Some(p0), Some(p1), Some(p2)) = (at(r.corners[0]), at(r.corners[1]), at(r.corners[2])) else { return false };
-        let (w, h) = ((p1.0 - p0.0).hypot(p1.1 - p0.1), (p2.0 - p1.0).hypot(p2.1 - p1.1));
+        let (Some(r), Some([p0, p1, p2, _])) = (self.rect_of(si, side), self.rect_corners(si, side)) else { return false };
+        let (w, h) = (p0.dist(p1), p1.dist(p2));
         let off = 0.2 * w.min(h);
         let dim = |a: Id, b: Id, d: f64| Constraint::Distance { a, b, d, off, expr: String::new(), driven: false, axis: 0, at: None };
+        let s = &mut self.sketches[si];
         s.constraints.push(dim(r.corners[0], r.corners[1], w));
         s.constraints.push(dim(r.corners[1], r.corners[2], h));
         true
@@ -654,4 +719,10 @@ impl Project {
             }
         }
     }
+}
+
+/// THE DIMENSIONS A RECTANGLE IS HELD BY, each where it has one: of its width, of its height.
+struct RectDimsFound {
+    width: Option<usize>,
+    height: Option<usize>,
 }

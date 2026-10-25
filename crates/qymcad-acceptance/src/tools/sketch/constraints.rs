@@ -43,6 +43,7 @@ pub static CON_HORIZONTAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -73,6 +74,7 @@ pub static CON_VERTICAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -103,6 +105,7 @@ pub static CON_PARALLEL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -133,6 +136,7 @@ pub static CON_PERPENDICULAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -165,6 +169,7 @@ pub static CON_EQUAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -195,6 +200,7 @@ pub static CON_COLLINEAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -226,6 +232,7 @@ pub static CON_CONCENTRIC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -257,6 +264,7 @@ pub static CON_TANGENT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -290,13 +298,15 @@ pub static CON_MIDPOINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
 };
 
-/// CON_COINCIDENT: the far ends of the two lines made one point. The two lines were drawn 30 long each, and the sketch
+/// CON_COINCIDENT: the far ends of the two lines made one point - two ends of curves tied are joined, as a pro-CAD
+/// merges them, so the sketch holds two points and no coincidence. The two lines were drawn 30 long each, and the sketch
 /// tied them equal as they were drawn: with one end on the other, the equal length follows from the rest, so of the two
 /// degrees of freedom a meeting takes one is taken already - 4 become 3.
 pub static CON_COINCIDENT: Tool = Tool {
@@ -312,7 +322,7 @@ pub static CON_COINCIDENT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 2, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -322,6 +332,7 @@ pub static CON_COINCIDENT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -352,6 +363,7 @@ pub static CON_FIX: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -383,6 +395,7 @@ pub static CON_SYMMETRY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
@@ -413,6 +426,7 @@ pub static CONSTRUCTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: (10, 2000),
     // the help writes of no construction geometry: there is no article to name
     help: "sketch/23-construction",

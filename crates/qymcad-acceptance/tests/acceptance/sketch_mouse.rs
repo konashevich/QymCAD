@@ -42,7 +42,7 @@ fn a_square_and_a_tall_shape() -> Session {
 fn a_rectangle_off_the_grid() -> Session {
     let mut s = build::empty_sketch();
     build::draw(&mut s, "tb-rect-hint", &[(10.0, 10.0), (50.0, 40.0)]);
-    let (dim, field) = (s.word("tb-dim-hint"), s.word("sk-expr-example"));
+    let (dim, field) = (s.word("tb-dim-hint"), s.word("f-number-or-expr"));
     s.press_hint(&dim);
     s.click_on_sketch(30.0, 10.0);
     s.click_on_sketch(30.0, 4.0);
@@ -122,7 +122,7 @@ probe! {
         let at = s.on_sketch(10.0, 0.0);
         s.double_click(at);
         let sk = s.document().sketches[0].clone();
-        let field = s.widgets().into_iter().find(|w| w.kind == qymcad::Kind::TextField && w.rect.top() > 120.0).unwrap_or_else(|| panic!("no box to type the size in opened by the circle; on screen: {:?}", s.words()));
+        let field = qymcad_acceptance::value_fields(&mut s).into_iter().find(|w| w.rect.top() > 120.0).unwrap_or_else(|| panic!("no box to type the size in opened by the circle; on screen: {:?}", s.words()));
         assert!(!field.value.is_empty(), "the box that opened is empty: it should hold the size the circle has now");
         s.click(field.rect.center()).chord(Modifiers::COMMAND, Key::A).type_text("30").key(Key::Enter);
         let now = s.document().sketches[0].clone();

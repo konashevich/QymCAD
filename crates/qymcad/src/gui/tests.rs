@@ -38,6 +38,24 @@ mod sketch_plane_pick_frames_tests;
 mod faces_part_in_light;
 
 #[cfg(test)]
+mod the_box_of_a_joint_is_laid_in_sections;
+
+#[cfg(test)]
+mod a_box_follows_what_it_sizes;
+
+#[cfg(test)]
+mod a_tool_with_nothing_to_apply_closes_plainly;
+
+#[cfg(test)]
+mod a_sketch_tool_outside_a_sketch_says_so;
+
+#[cfg(test)]
+mod the_doors_of_a_tool;
+
+#[cfg(test)]
+mod a_box_in_the_corner_stands_clear_of_a_bar;
+
+#[cfg(test)]
 mod the_floor_fades_round_the_view;
 
 #[cfg(test)]
@@ -153,3 +171,30 @@ mod a_whole_ellipse_is_cut_as_any_curve;
 
 #[cfg(test)]
 mod a_blend_built_short_advises_what_builds;
+
+#[cfg(test)]
+mod the_box_of_a_rectangle_goes_with_its_tool;
+
+#[cfg(test)]
+mod a_feature_value_is_named_in_its_box;
+
+#[cfg(test)]
+mod a_number_of_the_bar_is_a_field_of_the_box;
+
+#[cfg(test)]
+mod the_boxes_look;
+
+#[cfg(test)]
+mod the_tool_in_hand_after_its_work;
+
+#[cfg(test)]
+mod the_key_of_the_tool_in_hand_puts_it_down;
+
+#[cfg(test)]
+mod finish_climbs_the_tree;
+
+#[cfg(test)]
+mod profiles_are_taken_by_a_box;
+
+#[cfg(test)]
+mod the_author_is_supported;

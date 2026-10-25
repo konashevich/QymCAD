@@ -22,7 +22,8 @@ pub fn keep_live_shapes(live: &mut LiveGeom, project: &Project) {
 }
 
 /// A SKETCH OPENED FOR EDITING: the session takes it, and the key it is opened at.
-pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) {
+pub fn open_sketch_session(ses: &mut SketchSession, edits: &mut Edits, project: &Project, sid: Id) {
+    open_sketch_history(edits, sid);
     ses.editing = Some(sid);
     ses.opened = project.sketch_key(sid);
 }
@@ -38,6 +39,7 @@ pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) 
 /// A project from a bundle has no live B-rep, and the feature on a marked sketch asks for its source body: the missing
 /// ones are built first (`ensure_brep`), exactly those and not the whole project.
 pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
+    close_sketch_history(rc.edits, rc.project);
     if let Some(sid) = closed.editing.filter(|sid| rc.project.sketch_key(*sid) != closed.opened) {
         ensure_brep(rc);
         rc.project.mark_sketch_dirty(sid);
@@ -46,6 +48,12 @@ pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
 }
 
 pub fn regenerate_now(rc: &mut RebuildCtx) {
+    regenerate_now_unless(rc, &std::sync::Arc::default());
+}
+
+/// A REBUILD OF THIS THREAD THAT A FLAG STOPS: once `stop` is raised, between two nodes, or between two steps of the
+/// node the kernel is building. A rebuild stopped is of no use - its caller lets it go whole.
+pub fn regenerate_now_unless(rc: &mut RebuildCtx, stop: &std::sync::Arc<std::sync::atomic::AtomicBool>) {
     prune_dangling_features(rc.live, rc.project); // anti-ghost: on EVERY regen, orphan meshes and dangling features go
                                                   // THE REBUILD GRAPH: a parameter may have changed (including a named sketch dimension - those are in
                                                   // `param_map`) -> ONLY the features that refer to it are rebuilt. This used to mark ALL features
@@ -58,14 +66,15 @@ pub fn regenerate_now(rc: &mut RebuildCtx) {
     // One atomic store, and it cannot fall out of step with the setting. One core means single-threaded, which
     // is the switch a person reaches for when a parallel pass is suspected of lying.
     qymcad_kernel::set_parallel(rc.set.kernel_threads != 1, rc.set.kernel_threads);
-    let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), ..Default::default() };
+    let kernel =
+        qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), stop: stop.clone(), ..Default::default() };
     // HOW OFTEN THE GEOMETRIC FALLBACK FIRED is counted AROUND the rebuild. This is an event of a
     // different kind from rebinding a reference: there a name was found and moved, here no name was
     // found at all and the element was identified BY PLACE, by resemblance. Staying silent about it is
     // not allowed - that is exactly how a reference lands on a neighbouring face, and it is discovered
     // three operations later.
     let snaps_before = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
-    let report = rc.project.regenerate(&kernel);
+    let report = rc.project.regenerate_watched(&kernel, &Unless(stop));
     let snaps = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(snaps_before);
     rc.live.shapes = kernel.shapes.into_inner();
     settle_params_seen(rc.params_seen, rc.project); // the rebuild HAPPENED - only now are the values "seen"
@@ -100,6 +109,15 @@ pub fn regenerate_now(rc: &mut RebuildCtx) {
         *rc.status = said; // built, but some of it only in part
     }
     invalidate(rc.regen);
+}
+
+/// A REBUILD WATCHED FOR A FLAG that stops it.
+struct Unless<'a>(&'a std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl qymcad_core::feature::RegenWatch for Unless<'_> {
+    fn stopped(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 pub fn ensure_brep(rc: &mut RebuildCtx) {
@@ -307,6 +325,15 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
         }
         return None;
     }
+    // INSIDE A SKETCH UNDO STOPS AT ITS FIRST STEP: what lies under it is another part's, or the document's from before the sketch
+    // was opened
+    drop_stale_sketch_history(rc.edits, rc.project, rc.sketch_ses);
+    if !redo && rc.edits.undo.len() <= undo_floor(rc.edits) {
+        if !rc.edits.undo.is_empty() {
+            *rc.status = Notice::refusal(qymcad_i18n::tr("g-sketch-undo-floor"));
+        }
+        return None;
+    }
     let step = if redo { rc.edits.redo.pop() } else { rc.edits.undo.pop() }?;
     // an operation still open - a command, a sketch session - now starts from the state brought back: put down, it
     // returns there. Letting it go instead broke the sketch session that owned it, and rebuilding everything after an
@@ -333,7 +360,7 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
 /// until the document changes. The way to go on, where the edit was taken back.
 pub fn rebuild_cancelled(rc: &mut RebuildCtx) -> Option<Vec<Id>> {
     let depth = rc.edits.undo.len();
-    if depth > 0 && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
+    if depth > undo_floor(rc.edits) && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
         let step = rc.edits.undo.pop()?;
         let now = std::mem::replace(&mut rc.edits.baseline, step.snap.clone());
         rc.edits.redo.push(Step { name: step.name.clone(), snap: now });

@@ -22,7 +22,7 @@ This is a fork of [QymCAD](https://github.com/QymIs-Tech/QymCAD). The program is
 
 The licence is the text in [LICENSE](LICENSE): GNU AGPL-3.0-or-later, the same as QymCAD. This fork adds no other terms.
 
-`qymcad-mcp` is not in the Cursor marketplace. When the program is installed, open Customize, choose MCP, add a server, and set the command to `qymcad-mcp`. Cursor starts it. The agent builds the model. Opening the result starts a new copy of the graphical application and leaves the model that is already open untouched.
+When the program is installed, open Customize in Cursor, choose MCP, add a server, and set the command to `qymcad-mcp`. Cursor starts it. The agent builds the model. Opening the result starts a new copy of the graphical application and leaves the model that is already open untouched.
 
 The release packages of QymCAD do not include `qymcad-mcp` yet. The program is in this repository.
 

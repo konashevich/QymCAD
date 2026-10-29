@@ -16,6 +16,16 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 </div>
 
+## This repository
+
+This is a fork of [QymCAD](https://github.com/QymIs-Tech/QymCAD). The program is the same CAD. This fork adds a terminal program, `qymcad-mcp`, so an agent in Cursor can build a model and open the saved file in a new copy of the graphical application.
+
+The licence is the text in [LICENSE](LICENSE): GNU AGPL-3.0-or-later, the same as QymCAD. This fork adds no other terms.
+
+`qymcad-mcp` is not in the Cursor marketplace. When the program is installed, open Customize, choose MCP, add a server, and set the command to `qymcad-mcp`. Cursor starts it. The agent builds the model. Opening the result starts a new copy of the graphical application and leaves the model that is already open untouched.
+
+The release packages of QymCAD do not include `qymcad-mcp` yet. The program is in this repository.
+
 ## What it is
 
 QymCAD is a desktop CAD for mechanical parts and assemblies: housings, brackets, mechanisms, printed

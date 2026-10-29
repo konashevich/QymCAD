@@ -2241,7 +2241,14 @@ extern "C" QymShapeList* qym_shape_split_by_plane(const QymShape* s, const doubl
         bb.Get(xmin, ymin, zmin, xmax, ymax, zmax);
         double diag = gp_Pnt(xmin, ymin, zmin).Distance(gp_Pnt(xmax, ymax, zmax));
         if (diag < 1e-9) return nullptr;
-        TopoDS_Face cutter = BRepBuilderAPI_MakeFace(gp_Pln(o, n), -diag, diag, -diag, diag).Face();
+        // THE FACE HAS TO COVER THE BODY. Built around the plane origin, and only as wide as the body's own
+        // diagonal, it never reaches a body standing further away than that: a 20 mm cube moved 100 mm along X
+        // came back uncut. The origin of the face is the body's centre dropped onto the plane, so the same
+        // diagonal covers it. The plane itself is unchanged.
+        gp_Pnt centre((xmin + xmax) * 0.5, (ymin + ymax) * 0.5, (zmin + zmax) * 0.5);
+        gp_Vec onto(o, centre);
+        gp_Pnt at = centre.Translated(gp_Vec(n) * -onto.Dot(gp_Vec(n)));
+        TopoDS_Face cutter = BRepBuilderAPI_MakeFace(gp_Pln(at, n), -diag, diag, -diag, diag).Face();
         if (cutter.IsNull()) return nullptr;
 
         TopTools_ListOfShape args, tools;

@@ -25,6 +25,25 @@ fn cutting_through_the_middle_gives_two_halves_and_loses_nothing() {
     }
 }
 
+/// A cube moved 100 mm along X is still cut through the middle.
+///
+/// The cutting face was centred on the plane origin and only as wide as the cube's own diagonal, about 35 mm,
+/// so it never reached a cube standing at x 100. The split came back empty. The two halves are still 4000 mm^3.
+#[test]
+fn a_cube_standing_away_from_the_origin_still_splits() {
+    let moved = cube().transformed(&[1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("the cube was moved");
+    let v0 = moved.volume();
+    assert!(moved.split_by_plane([0.0, 0.0, 100.0], [0.0, 0.0, 1.0], 0).is_none(), "a plane above the moved cube cuts nothing");
+    let parts = moved.split_by_plane([0.0, 0.0, 10.0], [0.0, 0.0, 1.0], 0).expect("the moved cube was split");
+    assert_eq!(parts.len(), 2, "a plane across the moved cube gives two halves, and the count came out as {}", parts.len());
+    let sum: f64 = parts.iter().map(|p| p.volume()).sum();
+    assert!((sum - v0).abs() < 1e-3, "the pieces have to sum to the original volume: it was {v0} and became {sum}");
+    for (i, p) in parts.iter().enumerate() {
+        assert!((p.volume() - v0 / 2.0).abs() < 1e-3, "half {i} has to be exactly a half, and its volume is {}", p.volume());
+        assert!(p.is_valid(), "piece {i} has to be a valid body");
+    }
+}
+
 /// A plane that misses the body gives an honest refusal rather than a success that changed nothing.
 ///
 /// Without this check the feature would enter the timeline, run to no effect, and leave the reason the body

@@ -12,6 +12,14 @@ pub(crate) const APP_ID: &str = "qymcad";
 /// window bar, the task bar and the About window all say this one.
 pub(crate) const APP_NAME: &str = "QymCAD";
 
+/// THE IDENTIFIER OF A COPY STARTED BESIDE ONE THAT IS ALREADY OPEN.
+///
+/// The desktop groups every window of one identifier into one icon, and it does not raise a new
+/// window of an application that is already open when the start did not come from a click. A copy
+/// that shares the identifier stays behind that program and never gets another frame, so the file
+/// it was given is never drawn. Its own identifier is its own icon.
+const SIDE_APP_ID: &str = "qymcad-side";
+
 /// The window icon, decoded from the 256x256 PNG built into the binary.
 ///
 /// The same image the splash screen shows. A window with no icon of its own is given the framework's,
@@ -100,7 +108,7 @@ pub(crate) fn prepare_the_process() {
 /// THE PROGRAM AS IT COMES UP, before the first frame: fonts, the settings a previous run kept in `storage`,
 /// what to open with, the view. One function for the window and for a session driven from outside, so a
 /// session starts exactly the program a person starts; the window adds only the card that draws.
-pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe::Storage>) -> App {
+pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe::Storage>, asked: qymcad_ui_state::AskedFile) -> App {
     // the Phosphor icon font (without it the icon glyphs render as empty boxes)
     install_fonts(ctx);
 
@@ -108,7 +116,12 @@ pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe
     // A CRASH FILE NOBODY IS TOLD ABOUT IS THE SAME AS NO CRASH FILE. EVERY unseen report from
     // earlier runs is picked up here, and one window answers for all of them: taking only the
     // newest meant the next start found the next one and showed the window again.
-    app.disk.crash_report = crate::crash::unseen_reports();
+    // A copy started beside an open program does not take those reports: dismissing one here would
+    // rename it to `.seen` and the person's own program would never show it.
+    let side = crate::crash::side_session(std::env::var_os("QYMCAD_SIDE").as_deref());
+    if !side {
+        app.disk.crash_report = crate::crash::unseen_reports();
+    }
     // restore the previous session's settings (the view preferences)
     if let Some(storage) = storage {
         // THE SETTINGS COME AS ONE RECORD: loaded and assigned. There is no separate "apply" step, and
@@ -129,8 +142,8 @@ pub(crate) fn start_the_program(ctx: &egui::Context, storage: Option<&dyn eframe
         // otherwise, and it lived in this closure - which no check can run, so it was a decision
         // nobody measured.
         let last = eframe::get_value::<Option<String>>(storage, "last_project").flatten();
-        match qymcad_ui_state::opening(&app.set, last.as_deref()) {
-            qymcad_ui_state::Opening::LastProject(path) => {
+        match qymcad_ui_state::opening(&app.set, last.as_deref(), asked) {
+            qymcad_ui_state::Opening::LastProject(path) | qymcad_ui_state::Opening::Asked(path) => {
                 app.disk.io.startup = Some(path); // loaded asynchronously on the first frame (the splash with the spinner)
             }
             qymcad_ui_state::Opening::Empty { start_screen } => {
@@ -190,13 +203,37 @@ pub fn launch() -> eframe::Result<()> {
         persistence_path: qymcad_paths::settings_file(),
         ..Default::default()
     };
+    // A COPY BESIDE AN OPEN PROGRAM KEEPS ITS SETTINGS IN ANOTHER FILE. The person's `app.ron` holds
+    // the project they had open. This process reads a copy of it and writes only the copy, so closing
+    // the copy does not make the next ordinary start open the copy's file.
+    let side = crate::crash::side_session(std::env::var_os("QYMCAD_SIDE").as_deref());
+    if side {
+        if let Some(root) = qymcad_paths::data_root() {
+            qymcad_paths::drop_finished_copies(&root);
+        }
+        if let Some(from) = qymcad_paths::settings_file().filter(|path| path.is_file()) {
+            let _ = qymcad_paths::copy_settings_aside(&from);
+        }
+        if let Some(to) = qymcad_paths::side_settings_file() {
+            // The copied file remembers a maximized window. Restoring it covers the program that is
+            // already open, and a start that did not come from a click is left behind that program.
+            forget_where_the_window_was(&to);
+            options.persistence_path = Some(to);
+        }
+        options.centered = true;
+        options.viewport.app_id = Some(SIDE_APP_ID.to_owned());
+    }
+    let asked = qymcad_ui_state::asked_file(std::env::args().skip(1));
+    if let qymcad_ui_state::AskedFile::Path(ref path) = asked {
+        options.viewport.title = Some(super::window_title::window_title(Some(path), false));
+    }
     choose_the_adapter_ourselves(&mut options);
     options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
     let started = eframe::run_native(
         APP_ID,
         options,
-        Box::new(|cc| {
-            let mut app = start_the_program(&cc.egui_ctx, cc.storage);
+        Box::new(move |cc| {
+            let mut app = start_the_program(&cc.egui_ctx, cc.storage, asked);
             // the GPU viewport: when the wgpu backend is active, the bodies pass's GPU resources are installed.
             // Otherwise (on the glow fallback) the CPU raster remains.
             if let Some(rs) = &cc.wgpu_render_state {
@@ -238,6 +275,13 @@ pub fn launch() -> eframe::Result<()> {
     qymcad_ui_state::icons::stop_all_watcher_threads();
     icon_themes::discovery::stop_all_discovery_workers();
     crate::crash::end_journal();
+    // The copy's settings were a copy of the person's. A clean close leaves nothing of them: the next
+    // copy reads the person's file again. A close that does not reach here is removed on the next start.
+    if side {
+        if let Some(path) = qymcad_paths::side_settings_file() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
     started
 }
 
@@ -335,5 +379,53 @@ pub(crate) fn rank_device_type(t: eframe::wgpu::DeviceType) -> u8 {
         DeviceType::VirtualGpu => 3,
         DeviceType::Other => 2,
         DeviceType::Cpu => 1,
+    }
+}
+
+/// THE COPY DOES NOT REOPEN MAXIMIZED WHERE THE PERSON LEFT THEIR WINDOW.
+///
+/// The settings file holds the window rectangle as well as the preferences. A byte-for-byte copy
+/// would open the second program maximized over the first. The preferences stay; the rectangle goes.
+/// A file that cannot be read is left as it is: emptying it would throw the preferences away.
+fn forget_where_the_window_was(path: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(path) else { return };
+    let Ok(mut kept) = ron::from_str::<std::collections::BTreeMap<String, String>>(&text) else { return };
+    if kept.remove("window").is_none() {
+        return;
+    }
+    let Ok(out) = ron::ser::to_string_pretty(&kept, ron::ser::PrettyConfig::default()) else { return };
+    let _ = std::fs::write(path, out);
+}
+
+#[cfg(test)]
+mod tests {
+    /// A COPY KEEPS THE PREFERENCES AND DROPS THE WINDOW RECTANGLE. The person's file is not the one edited.
+    #[test]
+    fn a_side_copy_does_not_reopen_maximized() {
+        let dir = std::env::temp_dir().join(format!("qymcad-side-window-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the probe directory");
+        let body = "{\n    \"settings\": \"(scheme:\\\"dark\\\")\",\n    \"window\": \"(maximized:true)\",\n}\n";
+        let person = dir.join("app.ron");
+        let side = dir.join("side-app.ron");
+        std::fs::write(&person, body).expect("the person's settings");
+        std::fs::write(&side, body).expect("the copy");
+        super::forget_where_the_window_was(&side);
+        assert_eq!(std::fs::read(&person).expect("the person's file"), body.as_bytes(), "the person's settings were rewritten");
+        let kept: std::collections::BTreeMap<String, String> = ron::from_str(&std::fs::read_to_string(&side).expect("the copy")).expect("the copy no longer parses");
+        assert_eq!(kept.get("settings").map(String::as_str), Some("(scheme:\"dark\")"), "the preferences were dropped with the window");
+        assert!(!kept.contains_key("window"), "the copy still opens where the person left their window");
+        let broken = dir.join("broken.ron");
+        std::fs::write(&broken, b"this is not ron").expect("the broken file");
+        super::forget_where_the_window_was(&broken);
+        assert_eq!(std::fs::read(&broken).expect("the broken file"), b"this is not ron", "a file that cannot be read was emptied");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A COPY MUST NOT WEAR THE SAME IDENTIFIER as the program that is already open.
+    #[test]
+    fn a_side_copy_is_its_own_application() {
+        assert_ne!(super::SIDE_APP_ID, super::APP_ID, "the copy is grouped with the program that is already open");
+        assert!(!super::SIDE_APP_ID.is_empty());
     }
 }

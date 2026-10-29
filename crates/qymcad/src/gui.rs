@@ -782,18 +782,7 @@ impl App {
     }
 
     pub(crate) fn new_project(&mut self) {
-        self.project = Project::default();
-        self.project.new_document();
-        self.live.shapes.clear();
-        self.chosen.sel = Sel::None;
-        self.disk.project_path = None;
-        self.disk.dxf_path = None;
-        self.tools.pending_import.draw_pts = None;
-        invalidate(&mut self.regen);
-        self.viewing.view.initialized = false;
-        self.viewing.cam.init = false;
-        self.disk.edits.fresh(); // a clean start: no steps of the document before, the baseline taken on the next frame
-        self.status = Notice::info(crate::i18n::tr("g-new-project"));
+        blank_document::start(self);
     }
 
     /// A NEW ASSEMBLY DOCUMENT: the root without an empty part, with the root active.
@@ -1241,6 +1230,7 @@ impl App {
     /// the one place where the order of the phases is decided - could only be checked by reading it.
     pub(crate) fn draw_frame(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
+        command_queue::take_open(self, ctx);
         // The canvas of this frame, for a problem report: three atomic stores, so it costs nothing at
         // this rate. Taken before the prologue can return - a report is wanted most when the start-up
         // load is what went wrong.
@@ -1963,6 +1953,8 @@ pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_u
 }
 
 #[cfg(test)]
+mod a_queue_opens_the_file;
+#[cfg(test)]
 /// The checks that the INTERFACE goes through the dictionary. They stayed with the application when the
 /// dictionary moved out: what they watch is the panels, not the catalogue.
 #[cfg(test)]
@@ -2323,6 +2315,8 @@ mod startup;
 pub use startup::*;
 mod file_doors;
 pub(crate) use file_doors::*;
+mod command_queue;
+mod blank_document;
 mod look;
 pub(crate) use look::*;
 mod gizmo_math;

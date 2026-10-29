@@ -605,24 +605,51 @@ impl MirrorParams {
     }
 }
 
-/// WHAT THE PROGRAM OPENS WITH, decided in one place out of the settings.
+/// WHAT THE PROGRAM OPENS WITH, decided in one place out of the settings and the command line.
 ///
 /// A named answer rather than two ifs inside the launch: the launch cannot be run by a check, so a decision
-/// living there is a decision nobody measures. Four combinations of two flags give three outcomes, and each
-/// one is somebody's first minute.
+/// living there is a decision nobody measures. The two ticks give three outcomes, and a path on the command
+/// line is a fourth: it is the file this start was given, ahead of whatever the previous session remembered.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Opening {
     /// Load this file - the project of the previous session.
     LastProject(String),
+    /// Load this file - it was named on the command line.
+    Asked(String),
     /// An empty document. `start_screen` says whether the start screen comes up by itself.
     Empty { start_screen: bool },
 }
 
+/// A path from the command line, or the absence of one.
+///
+/// A separate type so it cannot be swapped with the remembered path: both are strings, and a swap would
+/// still compile and would open the wrong file.
+#[derive(Debug, PartialEq, Clone)]
+pub enum AskedFile {
+    /// Nothing was named. The remembered project may open.
+    None,
+    /// This path was named. It is taken when it is a file, and it blocks the remembered project when it is not.
+    Path(String),
+}
+
+/// The first argument, when there is one. Later arguments are ignored. An empty word is the same as none.
+pub fn asked_file(args: impl IntoIterator<Item = impl AsRef<str>>) -> AskedFile {
+    match args.into_iter().next() {
+        Some(arg) if !arg.as_ref().is_empty() => AskedFile::Path(arg.as_ref().to_string()),
+        _ => AskedFile::None,
+    }
+}
+
 /// The decision itself. `last` is the path remembered from the previous session, if there is one.
 ///
+/// A path on the command line wins, whether or not reopening is ticked. A named path that is not a file
+/// does not fall through to the remembered project: that would open a document nobody asked for this time.
 /// A remembered path that no longer names a file is NOT a reason to show an empty window in silence: the
 /// answer falls back to an empty document, and the start screen comes up if it is allowed to.
-pub fn opening(set: &Settings, last: Option<&str>) -> Opening {
+pub fn opening(set: &Settings, last: Option<&str>, asked: AskedFile) -> Opening {
+    if let AskedFile::Path(path) = asked {
+        return if std::path::Path::new(&path).is_file() { Opening::Asked(path) } else { Opening::Empty { start_screen: set.show_start_screen } };
+    }
     match last.filter(|p| set.open_last && std::path::Path::new(p).is_file()) {
         Some(p) => Opening::LastProject(p.to_string()),
         None => Opening::Empty { start_screen: set.show_start_screen },

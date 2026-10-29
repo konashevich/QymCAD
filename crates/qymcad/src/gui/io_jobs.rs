@@ -892,15 +892,44 @@ pub(super) fn exact_imported(format: qymcad_kernel::ExactFormat, bodies: usize, 
     crate::i18n::trn("io-exact-imported", &[("format", crate::gui::exact_entry(format).name()), ("what", &what), ("tris", &tris.to_string())])
 }
 
+/// Whether the frame should ask for another one at once.
+///
+/// A copy started beside a program that is already open, and not the one in front, must not ask.
+/// The ask sets the loop to poll, the covered copy never receives the frame, and the processor
+/// stays busy, so the file never finishes opening. An expose still delivers a frame later.
+enum Beside {
+    Copy,
+    Ordinary,
+}
+
+enum InFront {
+    Yes,
+    No,
+}
+
+fn ask_for_the_next_frame(beside: Beside, in_front: InFront) -> bool {
+    match beside {
+        Beside::Copy => match in_front {
+            InFront::No => false,
+            InFront::Yes => true,
+        },
+        Beside::Ordinary => true,
+    }
+}
+
 /// THE CARD OF A BACKGROUND JOB THAT IS NOT A REBUILD. An import says how long it has gone and can be left: the
 /// reading goes on in its thread and is thrown away when it ends, and the window is given back now. Returns
 /// whether the card is still up.
 fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut qymcad_ui_state::Notice, logo: &Option<egui::TextureHandle>, scheme: &qymcad_ui_state::SchemeUi, ctx: &egui::Context) -> bool {
     let Some(busy) = &regen.busy else { return false };
     let label = busy.label.clone();
+    let beside = if crate::crash::side_session(std::env::var_os("QYMCAD_SIDE").as_deref()) { Beside::Copy } else { Beside::Ordinary };
+    let in_front = if ctx.input(|i| i.viewport().focused) == Some(true) { InFront::Yes } else { InFront::No };
     if busy.kind != BgKind::ImportShapes {
         crate::gui::render::draw_splash(logo, scheme, ctx, &label);
-        ctx.request_repaint();
+        if ask_for_the_next_frame(beside, in_front) {
+            ctx.request_repaint();
+        }
         return true;
     }
     if crate::gui::render::draw_import_card(logo, scheme, ctx, &label, busy.started.elapsed(), &crate::i18n::tr("io-cancel-import")) {
@@ -909,7 +938,9 @@ fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut qymcad_ui
         *status = Notice::info(crate::i18n::tr("in-import-cancelled"));
         return false;
     }
-    ctx.request_repaint(); // the clock on the card moves on
+    if ask_for_the_next_frame(beside, in_front) {
+        ctx.request_repaint(); // the clock on the card moves on
+    }
     true
 }
 
@@ -1230,6 +1261,15 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
 #[cfg(test)]
 mod tests {
     use super::tri_colours;
+
+    /// A COVERED COPY DOES NOT ASK FOR ANOTHER FRAME. The ask would keep a processor busy and the file would not finish opening.
+    #[test]
+    fn a_covered_copy_does_not_ask_for_another_frame() {
+        assert!(!super::ask_for_the_next_frame(super::Beside::Copy, super::InFront::No), "a covered copy keeps asking and the processor stays busy");
+        assert!(super::ask_for_the_next_frame(super::Beside::Copy, super::InFront::Yes), "the copy in front never finishes opening");
+        assert!(super::ask_for_the_next_frame(super::Beside::Ordinary, super::InFront::No), "the ordinary program stopped drawing its progress");
+    }
+
     use qymcad_core::geom::{Mesh, MeshFace, Point3};
     use qymcad_core::model::ExportNode;
 

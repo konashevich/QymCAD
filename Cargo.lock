@@ -3677,6 +3677,7 @@ dependencies = [
  "pollster",
  "qymcad-assembly",
  "qymcad-core",
+ "qymcad-drive",
  "qymcad-help",
  "qymcad-i18n",
  "qymcad-io",
@@ -3737,11 +3738,12 @@ dependencies = [
 
 [[package]]
 name = "qymcad-drive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "qymcad-core",
  "qymcad-io",
  "qymcad-kernel",
+ "serde_json",
 ]
 
 [[package]]

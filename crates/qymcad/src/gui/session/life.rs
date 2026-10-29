@@ -19,7 +19,7 @@ impl Session {
         qymcad_i18n::stand_for_system_locale(&machine.locale);
         crate::system::stand_in(true);
         let win = Window::new(egui::vec2(machine.screen.0, machine.screen.1));
-        let app = Box::new(super::super::start_the_program(&win.ctx, Some(&machine.kept)));
+        let app = Box::new(super::super::start_the_program(&win.ctx, Some(&machine.kept), qymcad_ui_state::AskedFile::None));
         let mut session = Session {
             app,
             win,

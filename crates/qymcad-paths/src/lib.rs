@@ -77,6 +77,62 @@ pub fn settings_file() -> Option<std::path::PathBuf> {
     data_root().map(|d| d.join("app.ron"))
 }
 
+/// THE SETTINGS OF A COPY STARTED BESIDE ONE THAT IS ALREADY OPEN.
+///
+/// That copy must not write `app.ron`: the file holds the project the person had open, and a second
+/// process saving its own project there would make the next ordinary start open the copy's file.
+pub fn side_settings_file() -> Option<std::path::PathBuf> {
+    data_root().map(|d| d.join(side_settings_name()))
+}
+
+/// One file per copy. Two copies that share a name overwrite each other, and the first then
+/// saves the second's project into the file it still has open.
+fn side_settings_name() -> String {
+    format!("side-app-{}.ron", std::process::id())
+}
+
+/// Write a sibling of the person's settings with the same bytes. The person's file is only read.
+///
+/// A missing source does not create the sibling: the copy then starts from the factory settings.
+pub fn copy_settings_aside(person: &std::path::Path) -> bool {
+    let Ok(bytes) = std::fs::read(person) else { return false };
+    let Some(parent) = person.parent() else { return false };
+    std::fs::write(parent.join(side_settings_name()), bytes).is_ok()
+}
+
+/// Remove the settings of copies whose process is gone. A copy that is still open keeps its file,
+/// and `app.ron` is not a copy.
+pub fn drop_finished_copies(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let me = std::process::id();
+    for entry in entries.flatten() {
+        let Some(text) = entry.file_name().into_string().ok() else { continue };
+        let Some(pid) = copy_pid(&text) else { continue };
+        if pid == me || process_is_open(pid) {
+            continue;
+        }
+        let _ = std::fs::remove_file(entry.path());
+    }
+}
+
+fn copy_pid(name: &str) -> Option<u32> {
+    name.strip_prefix("side-app-")?.strip_suffix(".ron")?.parse().ok()
+}
+
+/// On Linux a process that is still running has a directory under `/proc`. Elsewhere the file is
+/// left, because a wrong guess would delete the settings of a copy that is still open.
+fn process_is_open(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::path::Path::new(&format!("/proc/{pid}")).is_dir()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
 /// A directory of the person's own things that set how the program looks and starts, e.g. `schemes` or `templates` -
 /// in the same one folder as the rest.
 pub fn config(sub: &str) -> Option<std::path::PathBuf> {
@@ -104,5 +160,47 @@ mod tests {
             assert!(dir.to_string_lossy().to_lowercase().contains(super::FOLDER), "the program's own directory does not carry the program's name: {}", dir.display());
             assert!(!dir.components().any(|c| c.as_os_str() == "cad"), "the folder is named after the last part of the id again, and any other CAD may claim it: {}", dir.display());
         }
+    }
+
+    /// A COPY OF THE SETTINGS LEAVES THE PERSON'S FILE BYTE FOR BYTE.
+    #[test]
+    fn copying_the_settings_aside_does_not_change_the_persons_file() {
+        let dir = std::env::temp_dir().join(format!("qymcad-settings-aside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the probe directory");
+        let from = dir.join("app.ron");
+        let to = dir.join(format!("side-app-{}.ron", std::process::id()));
+        let body = b"(settings:\"dark\",last_project:\"/keep/this.qcad\")";
+        std::fs::write(&from, body).expect("the probe settings");
+        assert!(super::copy_settings_aside(&from), "the copy was not written");
+        assert_eq!(std::fs::read(&from).expect("the person's file"), body, "the person's settings were rewritten");
+        assert_eq!(std::fs::read(&to).expect("the copy"), body, "the copy is not the person's settings");
+        assert!(!dir.join("side-app.ron").exists(), "every copy writes the same file");
+        let missing = dir.join("no-such.ron");
+        assert!(!super::copy_settings_aside(&missing), "a missing file still produced a copy");
+        assert_eq!(std::fs::read(&to).expect("the earlier copy"), body, "a failed copy replaced the earlier one");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A FINISHED COPY'S FILE GOES. The person's file, and the file of a copy that is still open, stay.
+    #[test]
+    fn a_finished_copy_does_not_leave_its_settings() {
+        let dir = std::env::temp_dir().join(format!("qymcad-settings-finished-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the probe directory");
+        let person = dir.join("app.ron");
+        let mine = dir.join(format!("side-app-{}.ron", std::process::id()));
+        let gone = dir.join("side-app-4294967294.ron");
+        let shared = dir.join("side-app.ron");
+        std::fs::write(&person, b"person").expect("the person's file");
+        std::fs::write(&mine, b"mine").expect("this copy");
+        std::fs::write(&gone, b"gone").expect("a finished copy");
+        std::fs::write(&shared, b"shared").expect("the old shared name");
+        super::drop_finished_copies(&dir);
+        assert!(person.is_file(), "the person's settings were removed");
+        assert!(mine.is_file(), "the open copy's settings were removed");
+        assert!(shared.is_file(), "a name that is not one copy was removed");
+        assert!(!gone.exists(), "a finished copy left its settings");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

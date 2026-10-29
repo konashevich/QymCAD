@@ -62,6 +62,7 @@ naga = { version = "29", features = ["wgsl-in"] }
 
 [dev-dependencies]
 qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they write and import
+qymcad-drive = { path = "../qymcad-drive" }
 
 # The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through

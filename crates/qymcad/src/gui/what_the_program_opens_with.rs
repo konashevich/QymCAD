@@ -11,7 +11,7 @@
 //! and measured never.
 //!
 //! It is `qymcad_ui_state::opening` now: two flags in, three outcomes out, every one of them somebody's
-//! first minute.
+//! first minute. A path on the command line is a fourth, and it comes ahead of the remembered project.
 //!
 //! WHY THE EMPTY DOCUMENT IS NOT `App::default()`. That one hands out a document WITH a part, and about
 //! five hundred checks build their scene on it - measured: taking the part out of it fails 75 of them. A
@@ -19,7 +19,7 @@
 //! person asked for. It is wrong only for the first minute, and that is what changed.
 #[cfg(test)]
 mod tests {
-    use qymcad_ui_state::{opening, Opening, Settings};
+    use qymcad_ui_state::{asked_file, opening, AskedFile, Opening, Settings};
 
     /// AN EMPTY DOCUMENT HOLDS NO PART.
     ///
@@ -63,17 +63,17 @@ mod tests {
         let path = file.to_string_lossy().into_owned();
 
         let mut set = Settings { open_last: true, show_start_screen: true, ..Default::default() };
-        assert_eq!(opening(&set, Some(&path)), Opening::LastProject(path.clone()), "asked to reopen and there is something to reopen");
+        assert_eq!(opening(&set, Some(&path), AskedFile::None), Opening::LastProject(path.clone()), "asked to reopen and there is something to reopen");
 
         set.show_start_screen = false;
-        assert_eq!(opening(&set, Some(&path)), Opening::LastProject(path.clone()), "the start screen has no say in WHICH document");
+        assert_eq!(opening(&set, Some(&path), AskedFile::None), Opening::LastProject(path.clone()), "the start screen has no say in WHICH document");
 
         set.open_last = false;
         set.show_start_screen = true;
-        assert_eq!(opening(&set, Some(&path)), Opening::Empty { start_screen: true }, "not asked to reopen: an empty document, and the person is greeted");
+        assert_eq!(opening(&set, Some(&path), AskedFile::None), Opening::Empty { start_screen: true }, "not asked to reopen: an empty document, and the person is greeted");
 
         set.show_start_screen = false;
-        assert_eq!(opening(&set, Some(&path)), Opening::Empty { start_screen: false }, "and with the greeting off, an empty document in silence");
+        assert_eq!(opening(&set, Some(&path), AskedFile::None), Opening::Empty { start_screen: false }, "and with the greeting off, an empty document in silence");
     }
 
     /// A REMEMBERED PATH THAT NO LONGER NAMES A FILE IS NOT AN EMPTY WINDOW IN SILENCE.
@@ -88,7 +88,7 @@ mod tests {
         let _ = std::fs::remove_file(&gone);
 
         assert_eq!(
-            opening(&set, Some(&gone.to_string_lossy())),
+            opening(&set, Some(&gone.to_string_lossy()), AskedFile::None),
             Opening::Empty { start_screen: true },
             "the remembered project is gone, so the person must be greeted rather than left with an empty window"
         );
@@ -100,6 +100,36 @@ mod tests {
     /// rather than left to follow from the defaults.
     #[test]
     fn out_of_the_box_the_program_opens_empty_and_greets() {
-        assert_eq!(opening(&Settings::default(), None), Opening::Empty { start_screen: true });
+        assert_eq!(opening(&Settings::default(), None, AskedFile::None), Opening::Empty { start_screen: true });
+    }
+
+    /// A FILE NAMED ON THE COMMAND LINE OPENS, and the remembered project stays where it was.
+    #[test]
+    fn a_named_file_opens_ahead_of_the_remembered_project() {
+        let named = a_real_file();
+        let remembered = std::env::temp_dir().join("qymcad-opening-remembered.qcad");
+        std::fs::write(&remembered, b"remembered").expect("the remembered file is written");
+        let set = Settings { open_last: true, show_start_screen: true, ..Default::default() };
+        let asked = AskedFile::Path(named.to_string_lossy().into_owned());
+        assert_eq!(
+            opening(&set, Some(&remembered.to_string_lossy()), asked.clone()),
+            Opening::Asked(named.to_string_lossy().into_owned()),
+            "the remembered project opened instead of the file this start was given"
+        );
+        let gone = std::env::temp_dir().join("qymcad-opening-named-gone.qcad");
+        let _ = std::fs::remove_file(&gone);
+        assert_eq!(
+            opening(&set, Some(&remembered.to_string_lossy()), AskedFile::Path(gone.to_string_lossy().into_owned())),
+            Opening::Empty { start_screen: true },
+            "a missing named file fell through to the remembered project"
+        );
+    }
+
+    /// THE FIRST WORD AFTER THE PROGRAM NAME IS THE FILE. A later word is not a second file.
+    #[test]
+    fn the_first_argument_is_the_file() {
+        assert_eq!(asked_file(["/tmp/cap.qcad", "--later"]), AskedFile::Path("/tmp/cap.qcad".into()));
+        assert_eq!(asked_file(std::iter::empty::<&str>()), AskedFile::None);
+        assert_eq!(asked_file([""]), AskedFile::None, "an empty word counted as a named file");
     }
 }

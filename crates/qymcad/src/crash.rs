@@ -86,21 +86,41 @@ pub fn install() {
 /// next start finds a journal without it and turns it into a report.
 static JOURNAL: Mutex<Option<PathBuf>> = Mutex::new(None);
 const JOURNAL_NAME: &str = "start_journal.txt";
+/// The start of a copy's journal name. The process id follows, so two copies never write one file,
+/// and a clean close can tell a copy's journal from the open program's.
+const SIDE_JOURNAL_PREFIX: &str = "side_journal_";
 pub(crate) const ENDED: &str = "ended";
 /// The line that says the run drew for ten seconds: a fault after it is more likely the kernel's than the driver's.
 pub(crate) const DREW_A_WHILE: &str = "600 frames drawn";
 /// The line that says the graphics device was taken away while the run drew.
 pub(crate) const DEVICE_LOST: &str = "the graphics device was lost";
 
+/// A non-empty `QYMCAD_SIDE` means this process was started beside one that is already open.
+pub fn side_session(flag: Option<&std::ffi::OsStr>) -> bool {
+    flag.is_some_and(|value| !value.is_empty())
+}
+
 /// BEGIN THIS RUN'S JOURNAL, and answer the report written for the run before when that one stopped without closing.
 /// Only the start of the program calls it: until then nothing is written, so a check never writes into a person's
-/// profile.
+/// profile. A copy started beside an open program writes a file of its own and does not read any journal already
+/// there: another copy may still be drawing, and that journal has no `ended` until the copy closes.
 pub fn begin_journal() -> PreviousRun {
+    if side_session(std::env::var_os("QYMCAD_SIDE").as_deref()) {
+        return open_journal_fresh(&format!("{SIDE_JOURNAL_PREFIX}{}.txt", std::process::id()));
+    }
+    open_journal(JOURNAL_NAME)
+}
+
+/// Open `name` in the crash directory and, when that file is an unfinished journal, turn it into a report.
+///
+/// The name is an argument so a side copy can be checked without writing the process environment: the
+/// environment is shared by every test in the process.
+fn open_journal(name: &str) -> PreviousRun {
     let Some(dir) = dir() else { return PreviousRun::default() };
     if std::fs::create_dir_all(&dir).is_err() {
         return PreviousRun::default();
     }
-    let path = dir.join(JOURNAL_NAME);
+    let path = dir.join(name);
     let journal = std::fs::read_to_string(&path).ok().filter(|t| !t.trim().is_empty());
     // the report is offered at the start like any other (`unseen_reports`)
     if let Some(stopped) = journal.as_deref().filter(|t| t.lines().last().map(str::trim) != Some(ENDED)) {
@@ -112,6 +132,25 @@ pub fn begin_journal() -> PreviousRun {
         }
     }
     PreviousRun { journal }
+}
+
+/// Open `name` and do not read a journal that is already in the directory.
+///
+/// A copy started beside another one uses this. An unfinished file there belongs to a copy that is
+/// still drawing, or to one that already closed, and neither is this process's previous run. Reading
+/// it would file a crash report in the shared folder and would wipe the lines the other copy has written.
+fn open_journal_fresh(name: &str) -> PreviousRun {
+    let Some(dir) = dir() else { return PreviousRun::default() };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return PreviousRun::default();
+    }
+    let path = dir.join(name);
+    if std::fs::write(&path, format!("started {}\n", crate::gui::now_iso8601())).is_ok() {
+        if let Ok(mut j) = JOURNAL.lock() {
+            *j = Some(path);
+        }
+    }
+    PreviousRun::default()
 }
 
 /// WHAT THE RUN BEFORE LEFT: its journal.
@@ -193,10 +232,14 @@ pub fn journaled_surface_status(answer: std::sync::Arc<SurfaceAnswer>) -> std::s
 }
 
 /// THE RUN CLOSED AS IT SHOULD: the journal says so, and the next start writes no report for it.
+/// A copy's own journal is removed: the next copy does not read it, and a clean close leaves nothing behind.
 pub fn end_journal() {
     journal(ENDED);
     if let Ok(mut j) = JOURNAL.lock() {
-        *j = None;
+        let path = j.take();
+        if let Some(path) = path.filter(|path| path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(SIDE_JOURNAL_PREFIX))) {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -566,5 +609,61 @@ mod tests {
         let steps = super::STATE.lock().unwrap().steps.clone();
         assert_eq!(steps, vec!["Move".to_string(), "Extrude".to_string()], "a repeated command flooded the trail");
         super::use_dir_for_test(None);
+    }
+
+    /// A COPY STARTED BESIDE AN OPEN ONE DOES NOT TOUCH THAT RUN'S JOURNAL.
+    ///
+    /// The open run's journal has no `ended` yet, because the run has not closed. Reading it and writing
+    /// a fresh start over it would file a crash report for a program that is still open, and would throw
+    /// away the lines that run has already written.
+    #[test]
+    fn a_side_copy_does_not_replace_the_open_runs_journal() {
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-side-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        let open = dir.join(super::JOURNAL_NAME);
+        let body = "started earlier\nstill drawing\n";
+        std::fs::create_dir_all(&dir).expect("the crash directory");
+        std::fs::write(&open, body).expect("the open run's journal");
+        let before = super::unseen_reports().len();
+        let copy_journal = format!("{}check.txt", super::SIDE_JOURNAL_PREFIX);
+        let _ = super::open_journal(&copy_journal);
+        assert_eq!(std::fs::read_to_string(&open).expect("the open journal"), body, "the open run's journal was replaced");
+        let side = std::fs::read_to_string(dir.join(&copy_journal)).unwrap_or_default();
+        assert!(side.contains("started "), "the copy did not open a journal of its own:\n{side}");
+        assert_eq!(super::unseen_reports().len(), before, "the still-open run was reported as a crash");
+        super::end_journal();
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A SECOND COPY DOES NOT REPORT THE FIRST, and does not wipe the first copy's journal.
+    ///
+    /// Two copies may be open together and they share a crash folder. The first copy's journal has
+    /// no `ended` while that copy is still drawing. The second copy writes a different file.
+    #[test]
+    fn a_second_side_copy_does_not_report_the_first() {
+        let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("qymcad-crash-side-two-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        super::use_dir_for_test(Some(&dir));
+        std::fs::create_dir_all(&dir).expect("the crash directory");
+        let first_name = format!("{}1.txt", super::SIDE_JOURNAL_PREFIX);
+        let second_name = format!("{}2.txt", super::SIDE_JOURNAL_PREFIX);
+        let first = dir.join(&first_name);
+        let body = "started earlier\nstill drawing\n";
+        std::fs::write(&first, body).expect("the first copy's journal");
+        let before = super::unseen_reports().len();
+        let _ = super::open_journal_fresh(&second_name);
+        assert_eq!(std::fs::read_to_string(&first).expect("the first journal"), body, "the first copy's journal was replaced");
+        let second = std::fs::read_to_string(dir.join(&second_name)).unwrap_or_default();
+        assert!(second.contains("started "), "the second copy did not open a journal of its own:\n{second}");
+        assert_eq!(super::unseen_reports().len(), before, "the still-open copy was reported as a crash");
+        super::end_journal();
+        assert!(!dir.join(&second_name).exists(), "a clean close left the copy's journal behind");
+        assert_eq!(std::fs::read_to_string(&first).expect("the first journal"), body, "closing the second copy changed the first journal");
+        super::use_dir_for_test(None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

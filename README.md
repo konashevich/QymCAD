@@ -18,13 +18,39 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 ## This repository
 
-This is a fork of [QymCAD](https://github.com/QymIs-Tech/QymCAD). The program is the same CAD. This fork adds a terminal program, `qymcad-mcp`. It speaks MCP. A client starts that program, and an agent can build a model and open the saved file in a new copy of the graphical application.
+This is a fork of [QymCAD](https://github.com/QymIs-Tech/QymCAD). The graphical application is the same. This fork adds an API that drives one document without that application. The terminal program is there so that an MCP client can call this API.
 
-The licence is the text in [LICENSE](LICENSE): GNU AGPL-3.0-or-later, the same as QymCAD. This fork adds no other terms.
+The API is the library `qymcad-drive`. A session holds the document and the geometry kernel. After each change it rebuilds the model and returns the tree: parts, sketches, the timeline, bodies, mates, and degrees of freedom. Through the session a program opens and saves a QymCAD file, and it reads and writes STEP and STL. A sketch on a coordinate plane becomes a body by an extrude, a revolve, a sweep, or a loft. A box, a cylinder, a sphere, a cone, a torus, or a prism can be placed directly. On a finished body the session can fillet and chamfer, build a shell and a hole, unite bodies or cut one from another, repeat a body in a row or around a circle, mirror it, and split it. Faces of that body can be drafted, pushed, offset, removed, or replaced. Parts can be placed in an assembly and joined by mates. A dimension can be an expression, and the last step can be undone.
 
-The client runs `qymcad-mcp` and talks to it over standard input and output. The agent builds the model. Opening the result starts a new copy of the graphical application and leaves the model that is already open untouched.
+The terminal program `qymcad-mcp` calls that same API. It speaks MCP over standard input and output, and each tool runs one method. Any program that speaks MCP can start it. When a saved file is shown, a new copy of the graphical application opens, and the model that is already open stays where it is.
 
-The release packages of QymCAD do not include `qymcad-mcp` yet. The program is in this repository.
+The licence is the text in [LICENSE](LICENSE), GNU AGPL-3.0-or-later, the same as QymCAD. This fork adds no other terms. Release packages of QymCAD do not include this API or the terminal program yet. Both are in this repository.
+
+### Connect the terminal program in an IDE
+
+Build the terminal program from this repository, with the same OCCT 7.9.3 paths as in [Building from source](#building-from-source):
+
+```bash
+cargo build --release --locked --bin qymcad-mcp
+```
+
+The program is `target/release/qymcad-mcp`. In the IDE, add a local MCP server. The command is the path to that program. The IDE talks to it through standard input and output. The server has no address and no port.
+
+```json
+{
+  "mcpServers": {
+    "qymcad": {
+      "command": "/absolute/path/qymcad-mcp",
+      "env": {
+        "LD_LIBRARY_PATH": "/absolute/path/occt/lib",
+        "QYMCAD_GUI": "/absolute/path/qymcad"
+      }
+    }
+  }
+}
+```
+
+The block above is the Linux entry. `LD_LIBRARY_PATH` names the `lib` directory of the built OCCT. The kernel libraries load one another, so the path stored in the program file is not enough for them. `QYMCAD_GUI` is the graphical application. It is used when a saved file is shown. On Windows, put that `lib` directory on `PATH` in the same `env` object, and leave `LD_LIBRARY_PATH` unset.
 
 ## What it is
 
